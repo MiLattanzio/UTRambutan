@@ -50,29 +50,29 @@ scripts/install-click.sh SERIAL_ADB
 Il primo comando pubblica `linux-arm64` self-contained, **senza trimming, AOT o
 single-file**, verifica gli SHA-256 delle dipendenze native e costruisce:
 
-`artifacts/click/rambutan.milattanzio_0.1.9_arm64.click`
+`artifacts/click/rambutan.milattanzio_0.1.10_arm64.click`
 
 FFmpeg 9.0.2, yt-dlp 2026.10.26 e Deno 2.9.8 sono inclusi; versioni, URL e hash
 sono in `packaging/native-tools.json`. Sul telefono non si installano SDK o
 librerie nella rootfs. Gli strumenti inclusi non si autoaggiornano: vengono
 aggiornati con il Click. Il componente di accesso viene compilato con
-`scripts/build-browser.sh` nell'immagine `utrambutan-browser-build:ut24.04`,
+`scripts/build-browser.sh` nell'immagine `utrambutan-browser-qt5-build:ut24.04`,
 preparata automaticamente dal Dockerfile in `tools/Rambutan.Browser`.
-Usa Qt WebEngine 6 fornito dal sistema Ubuntu Touch; non incorpora un'altra copia
+Usa Qt WebEngine 5.15 fornito dal sistema Ubuntu Touch; non incorpora un'altra copia
 del motore. Le versioni Qt del build sono in `artifacts/native-browser/qt-versions.txt`.
 L'app richiede i gruppi AppArmor standard `networking`, `audio` e `webview`,
 con policy `2404.2` e framework `ubuntu-touch-24.04-2.x`.
 
 Il build conserva il risultato completo della review e ne restituisce il codice
 di uscita. Il tool attualmente disponibile termina con **2**: non conosce
-`ubuntu/2404.2` e segnala Qt 6 come troppo recente per il framework;
+`ubuntu/2404.2`;
 il Click viene comunque generato. Non è una review superata né
 un'approvazione OpenStore. Anche l'avviso specifico di `desktop-file-validate`
 sull'icona relativa richiesta dal formato Click è conservato; altri errori
 desktop interrompono il build.
 
 Aprire **Rambutan** dal launcher Lomiri. Per un avvio CLI usare l'ambiente della
-sessione effettiva e l'ID `rambutan.milattanzio_rambutan_0.1.9`; non fissare UID,
+sessione effettiva e l'ID `rambutan.milattanzio_rambutan_0.1.10`; non fissare UID,
 display o seriale di un altro telefono nel launcher distribuito.
 
 ## Integrazione Ubuntu Touch

@@ -43,7 +43,7 @@ inside the read-only installation. No system libraries are replaced.
   and `licenses/yt-dlp-third-party.txt`; source: https://github.com/yt-dlp/yt-dlp/tree/2026.10.26.
 - Deno 2.9.8: MIT, `licenses/deno.txt`; source and bundled dependency notices:
   https://github.com/denoland/deno/tree/v2.9.8.
-- The sign-in helper in `tools/Rambutan.Browser` dynamically uses the Qt 6 and
+- The sign-in helper in `tools/Rambutan.Browser` dynamically uses the Qt 5 and
   Qt WebEngine libraries supplied by Ubuntu Touch. These libraries and Chromium
   are not bundled in this Click; their package copyright notices remain under
   `/usr/share/doc` on the device. The helper's source is part of this GPL project.

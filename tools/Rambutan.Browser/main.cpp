@@ -5,7 +5,7 @@
 #include <QQmlContext>
 #include <QQuickWebEngineProfile>
 #include <QWebEngineCookieStore>
-#include <QtWebEngineQuick/qtwebenginequickglobal.h>
+#include <QtWebEngine/qtwebengineglobal.h>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -154,8 +154,9 @@ int main(int argc, char **argv)
     const auto parent = getppid();
     prctl(PR_SET_PDEATHSIG, SIGTERM);
     if (getppid() != parent) return 1;
-    // Lomiri's launcher selects the Qt5-only Suru style. The helper uses Qt6.
-    qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+    // Use the standard Qt Quick Controls 2 style with the explicit QML palette.
+    // The launcher's Suru selection targets different control imports.
+    qputenv("QT_QUICK_CONTROLS_STYLE", "Default");
     // Embed an X11 child in the AXAML dialog's compositor surface. A separate
     // top-level session in this Click cgroup confuses Maliit's PID focus check.
     if (!qEnvironmentVariableIsEmpty("DISPLAY")) {
@@ -169,7 +170,8 @@ int main(int argc, char **argv)
     }
     QCoreApplication::setApplicationName("rambutan.milattanzio");
     QGuiApplication::setDesktopFileName(qEnvironmentVariable("APP_ID", "rambutan.milattanzio_rambutan"));
-    QtWebEngineQuick::initialize();
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QtWebEngine::initialize();
     QGuiApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(true);
     LoginBridge bridge;
@@ -188,6 +190,10 @@ int main(int argc, char **argv)
     if (engine.rootObjects().isEmpty()) return 3;
     auto window = qobject_cast<QWindow *>(engine.rootObjects().first());
     if (!window) return 3;
+#ifdef BROWSER_INPUT_TEST
+    std::fputs("Input-test QML loaded successfully.\n", stderr);
+    std::fflush(stderr);
+#endif
     bool embedded = false;
     const auto parentId = qEnvironmentVariable("RAMBUTAN_BROWSER_PARENT_XID").toULongLong(&embedded);
     std::unique_ptr<QWindow> host;

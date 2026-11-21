@@ -23,7 +23,7 @@ public sealed class BrowserCookieSignIn(string executable)
             RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
         };
-        // The native helper uses the system Qt6 libraries, not the app's FFmpeg
+        // The native helper uses the system Qt5 libraries, not the app's FFmpeg
         // library directory; no URL or credential is placed in its command line.
         start.Environment.Remove("LD_LIBRARY_PATH");
         start.Environment.Remove("QT_PLUGIN_PATH");

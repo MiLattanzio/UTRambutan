@@ -10,7 +10,7 @@ scripts/build-browser.sh
 mkdir -p artifacts/native-tools/browser
 cp artifacts/native-browser/rambutan-browser artifacts/native-tools/browser/
 if [[ "${RAMBUTAN_BROWSER_INPUT_TEST:-0}" == 1 ]]; then
-  cp artifacts/native-browser/build/rambutan-browser-input-test artifacts/native-tools/browser/rambutan-browser
+  cp artifacts/native-browser/build-qt5/rambutan-browser-input-test artifacts/native-tools/browser/rambutan-browser
 fi
 mkdir -p artifacts/click
 stage_dir="$(mktemp -d "$PWD/artifacts/click/stage.XXXXXX")"
