@@ -1,0 +1,19 @@
+Hello OpenStore maintainers,
+
+I would like to request guidance/manual review for Rambutan 0.1.9, package rambutan.milattanzio, ARM64, framework ubuntu-touch-24.04-2.x.
+
+The uploaded Click was rejected by automated review with:
+Linked Qt version too new for framework used: app/tools/browser/rambutan-browser
+
+Source and build instructions: https://github.com/MiLattanzio/UTRambutan
+Build: scripts/build-click.sh (README.md lists prerequisites and pinned dependencies).
+Technical notes: docs/browser-sign-in.md and docs/openstore-publication.md.
+Click SHA-256: 1c6cd4ba003c9a023c01dc0076d93099ffbb43278ee4921d43a096344470d65b
+
+The main application uses Avalonia/AXAML and UTDotNet. A separate, confined Qt 6 WebEngine helper uses system libraries and is embedded into the app's X11 sign-in dialog so Maliit can associate it with the focused app. Its private, in-memory profile imports only YouTube session cookies through inherited anonymous pipes after the app verifies them. It does not read Morph profiles, log passwords/cookies, expose a debug port or modify the root filesystem.
+
+The app requests only the standard networking, audio and webview policy groups. It uses Media Hub for background audio. The Click and its keyboard layout have been tested on Fairphone 5; real-account validation of the latest automatic import changes is still pending, and the listing identifies this as an early release.
+
+I understand Qt 6 application support in 24.04-2.x is experimental. Is manual review possible for this build, or must the browser helper be ported to a supported Qt framework before publication?
+
+Thank you.
