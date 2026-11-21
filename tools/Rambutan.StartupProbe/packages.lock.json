@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "rambutan.core": {
+        "type": "Project"
+      },
+      "rambutan.streams": {
+        "type": "Project",
+        "dependencies": {
+          "Rambutan.Core": "[0.1.0-beta.11, )"
+        }
+      }
+    },
+    "net10.0/linux-arm64": {},
+    "net10.0/linux-x64": {}
+  }
+}

@@ -1,0 +1,276 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Linq;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Rambutan.Core.Catalog;
+using Rambutan.Core.Models;
+using Rambutan.App.Controls;
+using Rambutan.App.Localization;
+
+namespace Rambutan.App.ViewModels;
+
+/// <summary>The Library's tabs, in YouTube Music's order; History, a page of its
+/// own there, last.</summary>
+public enum LibrarySectionKind { Playlists, Songs, Albums, Artists, History }
+
+/// <summary>
+/// One Library tab: its first page, the pages after it as the list scrolls, and
+/// its own loading, empty, failed and signed-out states. A tab loads the first
+/// time it is shown, and again after <see cref="MarkStale"/> (a save or a
+/// subscribe elsewhere changed it) the next time it is shown.
+/// </summary>
+public partial class LibrarySection : ViewModelBase
+{
+    private readonly Func<Task<LibraryPage>> _first;
+    private readonly Func<ContinuationToken, Task<LibraryPage>> _next;
+    private ContinuationToken? _continuation;
+    private bool _loaded;
+    private bool _stale;
+    // Bumped by every refresh, so a page asked for before it can't land after it.
+    private int _generation;
+
+    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private bool _isLoadingMore;
+    [ObservableProperty] private bool _hasMore;
+    [ObservableProperty] private bool _needsSignIn;
+    [ObservableProperty] private LoadError? _loadError;
+
+    /// <summary>The library couldn't be reached, so the tab lists only the albums or
+    /// playlists kept with the downloads.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OfflineNotice))]
+    private bool _isOfflineCopy;
+
+    public string? OfflineNotice => !IsOfflineCopy ? null
+        : Strings.Get(Kind == LibrarySectionKind.Albums ? "library.offlineAlbums" : "library.offlinePlaylists");
+
+    public LibrarySectionKind Kind { get; }
+
+    public ObservableCollection<CatalogEntry> Items { get; } = [];
+
+    public LibrarySection(
+        LibrarySectionKind kind,
+        Func<Task<LibraryPage>> first,
+        Func<ContinuationToken, Task<LibraryPage>> next)
+    {
+        Kind = kind;
+        _first = first;
+        _next = next;
+        if (kind == LibrarySectionKind.History)
+            Items.CollectionChanged += OnItemsChanged;
+    }
+
+    /// <param name="sessionLoaded">Awaited before a first page, so a tab
+    /// opened at startup asks signed in (<see cref="NavigationService.WaitForSessionAsync"/>).</param>
+    public static LibrarySection For(LibrarySectionKind kind, ICatalog catalog, Func<Task>? sessionLoaded = null)
+    {
+        Func<Task<LibraryPage>> first = kind switch
+        {
+            LibrarySectionKind.Albums => () => catalog.GetLibraryAlbumsAsync(),
+            LibrarySectionKind.Artists => () => catalog.GetLibraryArtistsAsync(),
+            LibrarySectionKind.Songs => () => catalog.GetLibrarySongsAsync(),
+            LibrarySectionKind.History => () => catalog.GetHistoryAsync(),
+            _ => () => catalog.GetLibraryPlaylistsAsync(),
+        };
+        Func<ContinuationToken, Task<LibraryPage>> next = kind switch
+        {
+            LibrarySectionKind.Albums => t => catalog.GetLibraryAlbumsContinuationAsync(t),
+            LibrarySectionKind.Artists => t => catalog.GetLibraryArtistsContinuationAsync(t),
+            LibrarySectionKind.Songs => t => catalog.GetLibrarySongsContinuationAsync(t),
+            // One page, so there is never a token to follow.
+            LibrarySectionKind.History => _ => Task.FromResult(new LibraryPage { Items = [] }),
+            _ => t => catalog.GetLibraryPlaylistsContinuationAsync(t),
+        };
+        if (sessionLoaded is not null)
+        {
+            var load = first;
+            first = async () =>
+            {
+                await sessionLoaded();
+                return await load();
+            };
+        }
+        return new(kind, first, next);
+    }
+
+    public async Task EnsureLoadedAsync()
+    {
+        if (_loaded && !_stale)
+            return;
+        await RefreshAsync();
+    }
+
+    /// <summary>The library changed under this tab; it reloads when next shown.</summary>
+    public void MarkStale() => _stale = true;
+
+    /// <summary>Drops a card removed from the library from its own menu, at once.
+    /// Entries are records, so an equal entry matches.</summary>
+    public void RemoveEntry(CatalogEntry entry)
+    {
+        for (var i = Items.Count - 1; i >= 0; i--)
+        {
+            if (Equals(Items[i], entry))
+                Items.RemoveAt(i);
+        }
+    }
+
+    /// <summary>Songs tab: drops a song removed from the library elsewhere, at once,
+    /// as YouTube Music does; the next page's token stays good.</summary>
+    public void RemoveSong(string videoId)
+    {
+        for (var i = Items.Count - 1; i >= 0; i--)
+        {
+            if (Items[i] is SongEntry song && song.Track.VideoId == videoId)
+                Items.RemoveAt(i);
+        }
+    }
+
+    public bool IsSongs => Kind == LibrarySectionKind.Songs;
+
+    public bool IsHistory => Kind == LibrarySectionKind.History;
+
+    /// <summary>Songs and History show as track rows; the other tabs as cards.</summary>
+    public bool ShowsRows => IsSongs || IsHistory;
+
+    /// <summary>History's list: each of YouTube Music's headings
+    /// (<see cref="HistoryHeading"/>) followed by its <see cref="HistoryEntry"/>
+    /// rows, kept in step with <see cref="Items"/>; empty on the other tabs. One
+    /// list, so the view virtualizes it whole and headings scroll with their rows.</summary>
+    public ObservableCollection<object> HistoryRows { get; } = [];
+
+    private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        HistoryRows.Clear();
+        foreach (var row in HistoryRowsOf(Items.OfType<HistoryEntry>()))
+            HistoryRows.Add(row);
+    }
+
+    /// <summary>The entries with a heading before the first and wherever the
+    /// heading changes. The rows come grouped, newest first, so a heading that
+    /// comes back later starts a group of its own.</summary>
+    public static List<object> HistoryRowsOf(IEnumerable<HistoryEntry> entries)
+    {
+        var rows = new List<object>();
+        string? played = null;
+        foreach (var entry in entries)
+        {
+            if (rows.Count == 0 || entry.Played != played)
+            {
+                played = entry.Played;
+                rows.Add(new HistoryHeading(played));
+            }
+            rows.Add(entry);
+        }
+        return rows;
+    }
+
+    [RelayCommand]
+    public async Task RefreshAsync()
+    {
+        var generation = ++_generation;
+        _loaded = true;
+        _stale = false;
+        IsLoading = true;
+        IsLoadingMore = false;
+        LoadError = null;
+        NeedsSignIn = false;
+        // The notice stays while a copy reloads, and its rows go if the reload fails,
+        // so they never show as if they were the library.
+        var wasCopy = IsOfflineCopy;
+        try
+        {
+            var page = await _first();
+            if (generation != _generation)
+                return;
+            Items.Clear();
+            foreach (var entry in page.Items)
+                Items.Add(entry);
+            IsOfflineCopy = page.IsOfflineCopy;
+            // A copy reloads at the next visit, so it gives way to the library once back online.
+            _loaded = !page.IsOfflineCopy;
+            _continuation = page.Continuation;
+            HasMore = _continuation is not null;
+        }
+        catch (NotSignedInException)
+        {
+            if (generation != _generation)
+                return;
+            Items.Clear();
+            IsOfflineCopy = false;
+            NeedsSignIn = true;
+            _loaded = false; // retry on next visit, e.g. after signing in
+        }
+        catch (Exception ex)
+        {
+            if (generation != _generation)
+                return;
+            if (wasCopy)
+                Items.Clear();
+            IsOfflineCopy = false;
+            LoadError = LoadError.From(ex, LoadSubject.Library, RefreshCommand);
+            _loaded = false;
+        }
+        finally
+        {
+            if (generation == _generation)
+                IsLoading = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task LoadMoreAsync()
+    {
+        if (_continuation is not { } token || IsLoadingMore || IsLoading)
+            return;
+
+        var generation = _generation;
+        IsLoadingMore = true;
+        LoadError = null;
+        try
+        {
+            var page = await _next(token);
+            if (generation != _generation)
+                return;
+            _continuation = page.Continuation;
+            HasMore = _continuation is not null;
+            foreach (var entry in page.Items)
+                Items.Add(entry);
+        }
+        catch (Exception ex)
+        {
+            if (generation == _generation)
+                LoadError = LoadError.From(ex, MoreSubject, LoadMoreCommand);
+        }
+        finally
+        {
+            if (generation == _generation)
+                IsLoadingMore = false;
+        }
+    }
+
+    private LoadSubject MoreSubject => Kind switch
+    {
+        LibrarySectionKind.Albums => LoadSubject.MoreAlbums,
+        LibrarySectionKind.Artists => LoadSubject.MoreArtists,
+        LibrarySectionKind.Songs or LibrarySectionKind.History => LoadSubject.MoreSongs,
+        _ => LoadSubject.MorePlaylists,
+    };
+}
+
+/// <summary>One of YouTube Music's history headings ("Today", a month) as a row of
+/// History's list: not selectable, not played, spoken as a heading. A class, not a
+/// record: two headings with the same text are two rows.</summary>
+public sealed class HistoryHeading(string played) : IHasAccessibleName
+{
+    public string Played { get; } = played;
+
+    public string AccessibleName => Played;
+
+    // The text never changes.
+    event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged { add { } remove { } }
+}

@@ -1,0 +1,32 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:touch="using:Rambutan.App.Services">
+  <Style Selector="Window.phone">
+    <Setter Property="FontSize" Value="16" />
+  </Style>
+  <Style Selector="Window.phone TextBox">
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="touch:PhoneInput.Enabled" Value="True" />
+  </Style>
+  <Style Selector="Window.phone Button">
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="MinWidth" Value="48" />
+    <Setter Property="FontSize" Value="16" />
+  </Style>
+  <Style Selector="Window.phone ListBoxItem, Window.phone ComboBox, Window.phone ComboBoxItem, Window.phone MenuItem">
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="FontSize" Value="16" />
+  </Style>
+  <Style Selector="Window.phone Button.phonenav">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Window.phone.keyboard Border#MiniPlayer, Window.phone.keyboard Grid#NavigationBar, Window.phone.keyboard Grid#PhoneHeader">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="Window.phone.compact Grid#PhoneHeader">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+</Styles>

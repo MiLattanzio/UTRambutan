@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "FFmpeg.AutoGen.Bindings.DynamicallyLoaded": {
+        "type": "Direct",
+        "requested": "[9.0.1.1, )",
+        "resolved": "9.0.1.1",
+        "contentHash": "C7YhCgZa3Lu5RhVgOtVGYiAhVn2eQUM5vT6SEJM0OjB+YbQ2zuFVZN8fWfeLeJkToqgc90fSP0XeC32EajF7sQ==",
+        "dependencies": {
+          "FFmpeg.AutoGen.Abstractions": "9.0.1.1"
+        }
+      },
+      "SoundFlow": {
+        "type": "Direct",
+        "requested": "[1.4.1, )",
+        "resolved": "1.4.1",
+        "contentHash": "KsCcIjdH6PzPwtpRZLtZtBWLPIU75cLSSRSI4E4e7Yf6X6bE4PnKYzBp9McsnbsObH6ITtf55NaMyrXv9A8+tw=="
+      },
+      "FFmpeg.AutoGen.Abstractions": {
+        "type": "Transitive",
+        "resolved": "9.0.1.1",
+        "contentHash": "ZthcQtg0CyBJSM14AsQGzcj+qy5L3IDLpxm7i+tFNoO9K/780Czpb4cVxackBBXd3V3fh3thaQ9R47wJMYXuRg=="
+      },
+      "rambutan.core": {
+        "type": "Project"
+      }
+    },
+    "net10.0/linux-arm64": {
+      "SoundFlow": {
+        "type": "Direct",
+        "requested": "[1.4.1, )",
+        "resolved": "1.4.1",
+        "contentHash": "KsCcIjdH6PzPwtpRZLtZtBWLPIU75cLSSRSI4E4e7Yf6X6bE4PnKYzBp9McsnbsObH6ITtf55NaMyrXv9A8+tw=="
+      }
+    },
+    "net10.0/linux-x64": {
+      "SoundFlow": {
+        "type": "Direct",
+        "requested": "[1.4.1, )",
+        "resolved": "1.4.1",
+        "contentHash": "KsCcIjdH6PzPwtpRZLtZtBWLPIU75cLSSRSI4E4e7Yf6X6bE4PnKYzBp9McsnbsObH6ITtf55NaMyrXv9A8+tw=="
+      }
+    }
+  }
+}

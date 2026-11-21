@@ -1,0 +1,520 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Rambutan.App.Services;
+using Rambutan.Core.Catalog;
+using Rambutan.Core.Diagnostics;
+using Rambutan.Core.Local;
+using Rambutan.Core.Models;
+using Rambutan.Core.Playback;
+using Rambutan.Core.Sidebar;
+using Rambutan.App.Localization;
+
+namespace Rambutan.App.ViewModels;
+
+/// <summary>The sidebar entry a page belongs to. Drill-down pages keep the
+/// section they were opened from, the way a browser keeps the site.</summary>
+public enum NavSection
+{
+    None,
+    Home,
+    Search,
+    Library,
+    Stats,
+    Settings,
+}
+
+/// <summary>
+/// Stack navigation over the content region plus the "open a catalog entry"
+/// policy: songs play, everything else navigates.
+/// </summary>
+public partial class NavigationService : ViewModelBase
+{
+    private readonly ICatalog _catalog;
+    private readonly PlaybackCoordinator _coordinator;
+    private readonly TrackActionsViewModel _actions;
+    private readonly Stack<Entry> _backStack = new();
+    private readonly Stack<Entry> _forwardStack = new();
+    private bool _currentIsRoot;
+
+    /// <summary>A page in the history with the sidebar entry it was shown under,
+    /// and whether it was a sidebar root or a page opened from one.</summary>
+    private readonly record struct Entry(ViewModelBase Page, NavSection Section, bool IsRoot);
+
+    private HomePageViewModel? _home;
+    private SearchPageViewModel? _search;
+    private readonly SearchHistory? _searchHistory;
+    private readonly HomeStations? _stations;
+    private LibraryPageViewModel? _library;
+    private readonly LocalLibraryViewModel? _local;
+    private readonly ListeningStatsViewModel? _stats;
+
+    [ObservableProperty] private ViewModelBase? _current;
+    [ObservableProperty] private bool _canGoBack;
+    [ObservableProperty] private bool _canGoForward;
+
+    public TrackActionsViewModel? Actions => _actions;
+
+    /// <summary>What album, playlist and artist cards do without opening their page.</summary>
+    public CollectionActionsViewModel Collections { get; }
+
+    /// <summary>Which sidebar entry reads as active. Follows every
+    /// route into a page (sidebar, shortcuts, Back), not just sidebar clicks.</summary>
+    [ObservableProperty] private NavSection _section;
+
+    public NavigationService(
+        ICatalog catalog, PlaybackCoordinator coordinator, TrackActionsViewModel actions,
+        SearchHistory? searchHistory = null, HomeStations? stations = null,
+        LocalLibraryViewModel? local = null, ListeningStatsViewModel? stats = null)
+    {
+        _catalog = catalog;
+        _coordinator = coordinator;
+        _actions = actions;
+        _searchHistory = searchHistory;
+        _stations = stations;
+        _local = local;
+        _stats = stats;
+        if (stats is not null)
+            stats.OpenSettings = () => GoSettings?.Invoke();
+        Collections = new CollectionActionsViewModel(catalog, coordinator, actions, stations, OpenStation)
+        {
+            OpenLocalPlaylist = OpenLocalPlaylist,
+        };
+        if (local?.Downloads is not null)
+            GoDownloads = OpenDownloads;
+    }
+
+    /// <summary>Completes once the stored session is in the client
+    /// (<see cref="SessionViewModel.CookiesLoaded"/>); null where none is restored.</summary>
+    public Task? SessionLoaded { get; set; }
+
+    /// <summary>How long a page's first request waits for <see cref="SessionLoaded"/>
+    /// before it goes out signed out, as the startup link does.</summary>
+    public TimeSpan SessionWait { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Waits until the stored session is in, so a page opened at startup asks
+    /// YouTube Music signed in: an unauthenticated browse gets the anonymous
+    /// feed without an error, and the restore doesn't count as a sign-in
+    /// change, so nothing would load the page again. Pages call it after
+    /// showing their loading state. Never throws.
+    /// </summary>
+    public async Task WaitForSessionAsync()
+    {
+        if (SessionLoaded is not { IsCompleted: false } loaded)
+            return;
+        try
+        {
+            await loaded.WaitAsync(SessionWait);
+        }
+        catch (TimeoutException)
+        {
+            AppLog.Write("nav", "session not loaded in time; loading the page signed out");
+        }
+    }
+
+    public void GoHome()
+    {
+        _home ??= new HomePageViewModel(_catalog, this, _stations, (tracks, start) => _coordinator.PlayQueueAsync(tracks, start))
+        {
+            IsSignedIn = () => HasSession?.Invoke() ?? _actions?.IsSignedIn?.Invoke() == true,
+            RecentPlays = () => RecentPlays?.Invoke(),
+        };
+        NavigateRoot(_home, NavSection.Home);
+        _ = _home.EnsureLoadedAsync();
+    }
+
+    public void GoSearch() => GoSearch(reset: false);
+
+    private void GoSearch(bool reset)
+    {
+        _search ??= new SearchPageViewModel(_catalog, _coordinator, this, _searchHistory,
+            _local is null ? null : _local.SearchAsync, new MoodsPageViewModel(_catalog, this));
+        NavigateRoot(_search, NavSection.Search, reset);
+        _search.EnsureMoodsLoaded();
+        _search.RequestFocus();
+    }
+
+    /// <summary>Opens Search and runs <paramref name="query"/> there, without
+    /// adding it to the search history (a rambutan://search link). A link starts
+    /// from nothing: it leaves no way back to what was open.</summary>
+    public void GoSearch(string query)
+    {
+        GoSearch(reset: true);
+        _search!.RunFromLink(query);
+    }
+
+    /// <summary>Opens Search and runs <paramref name="query"/> there as typed in
+    /// its box, so the search history keeps it (the title bar's field).</summary>
+    public void SearchFor(string query)
+    {
+        GoSearch();
+        _search!.RunTyped(query);
+    }
+
+    public void GoLibrary() => GoLibrary(_library?.Source ?? LibrarySource.YouTubeMusic);
+
+    private void GoLibrary(LibrarySource source)
+    {
+        _library ??= new LibraryPageViewModel(_catalog, this, _actions, _coordinator, _local, source);
+        _library.Source = source;
+        NavigateRoot(_library, NavSection.Library);
+        _ = _library.EnsureLoadedAsync();
+    }
+
+    /// <summary>Opens the listening stats, which read the play log each time they
+    /// open. Does nothing where the play log isn't composed.</summary>
+    public void GoStats()
+    {
+        if (_stats is null)
+            return;
+        // Showing the page loads it (OnCurrentChanged); a click on the page that
+        // is showing reads the log again.
+        var showing = ReferenceEquals(Current, _stats);
+        NavigateRoot(_stats, NavSection.Stats);
+        if (showing)
+            _ = _stats.LoadAsync();
+    }
+
+    /// <summary>Opens the downloads: Library → On this computer, filtered to
+    /// them. Null where downloads aren't composed.</summary>
+    public Action? GoDownloads { get; set; }
+
+    private void OpenDownloads()
+    {
+        _local!.Filter = LocalSource.Downloads;
+        GoLibrary(LibrarySource.ThisComputer);
+    }
+
+    /// <summary>Opens Settings; set by MainViewModel, which makes that page.</summary>
+    public Action? GoSettings { get; set; }
+
+    partial void OnCurrentChanged(ViewModelBase? oldValue, ViewModelBase? newValue)
+    {
+        if (oldValue is LibraryPageViewModel library && !ReferenceEquals(newValue, library))
+            library.OnHidden();
+        // A local playlist follows its file and the scans only while it shows.
+        if (oldValue is LocalPlaylistPageViewModel left && !ReferenceEquals(newValue, left))
+            left.Hide();
+        if (newValue is LocalPlaylistPageViewModel shown && !ReferenceEquals(oldValue, shown))
+            _ = shown.ShowAsync();
+    }
+
+    /// <summary>Opens a root page, such as Settings (made anew each visit).</summary>
+    public void GoTo(ViewModelBase page, NavSection section = NavSection.None) =>
+        NavigateRoot(page, section);
+
+    /// <summary>Drops the cached library page; call when the session changes.</summary>
+    public void InvalidateLibrary()
+    {
+        if (_library is null)
+            return;
+        var onScreen = ReferenceEquals(Current, _library);
+        var source = _library.Source;
+        _library.Detach();
+        // The old page is no use in the history; the new one takes its place.
+        Forget(_library);
+        _library = null;
+        // On screen, it loads again in place for the new session: signing in
+        // from the Library's own prompt stays on the Library.
+        if (onScreen)
+            GoLibrary(source);
+    }
+
+    /// <summary>Requests now go out as someone else (signed in, signed out, or
+    /// expired): Home's feed is the old account's. On screen it loads again now;
+    /// otherwise the next time it opens.</summary>
+    public void OnSignInChanged()
+    {
+        // Every page behind this one was loaded for the old account.
+        ClearHistory();
+        _home?.OnSignInChanged(onScreen: ReferenceEquals(Current, _home));
+    }
+
+    public void OpenAlbum(string browseId)
+    {
+        var page = new AlbumPageViewModel(_catalog, _coordinator, browseId) { Actions = _actions, Collections = Collections, Navigation = this };
+        Push(page);
+        _ = page.LoadAsync();
+    }
+
+    public void OpenPlaylist(string playlistId)
+    {
+        var page = new PlaylistPageViewModel(_catalog, _coordinator, this, _actions, playlistId);
+        Push(page);
+        _ = page.LoadAsync();
+    }
+
+    /// <summary>
+    /// Opens a sidebar pin's page. A pin belongs to no destination, so none
+    /// reads as active while its page shows (a page opened from a destination
+    /// keeps that one lit); Back still lights the one it returns to. Nothing
+    /// changes when nothing opens (local playlists not composed), or when the
+    /// pin's page is the one showing.
+    /// </summary>
+    public void OpenPin(SidebarPin pin)
+    {
+        var before = Current;
+        if (before is IPinnablePage page && page.PinKind == pin.Kind && page.PinId == pin.Id)
+            return;
+        switch (pin.Kind)
+        {
+            case PinKind.Album:
+                OpenAlbum(pin.Id);
+                break;
+            case PinKind.Playlist:
+                OpenPlaylist(pin.Id);
+                break;
+            case PinKind.LocalPlaylist:
+                OpenLocalPlaylist(pin.Id);
+                break;
+        }
+        if (!ReferenceEquals(before, Current))
+            Section = NavSection.None;
+    }
+
+    /// <summary>The Spotify import's files and memory; null where it isn't
+    /// composed, and then Library offers no import.</summary>
+    public Func<SpotifyImports>? SpotifyImports { get; set; }
+
+    /// <summary>The signed-in account's id, for the imports it made; set by App.</summary>
+    public Func<string?>? Account { get; set; }
+
+    /// <summary>Whether requests go out with the account's session; set by App.
+    /// Home asks this, not the checked sign-in state: at startup Home loads as
+    /// soon as the stored cookies are read, before their check has answered.</summary>
+    public Func<bool>? HasSession { get; set; }
+
+    /// <summary>Reads the play log for Home's tiles, or returns null while
+    /// recording is off; set by App. Unset, Home's tiles come only from
+    /// YouTube Music's own shelf.</summary>
+    public Func<Task<PlayLogContents>?>? RecentPlays { get; set; }
+
+    public bool CanImportFromSpotify => SpotifyImports is not null;
+
+    private SpotifyImportViewModel? _spotifyImport;
+
+    /// <summary>The import page. One for the app's lifetime, so leaving it
+    /// while it matches or creates and coming back shows where it is.</summary>
+    public void OpenSpotifyImport()
+    {
+        if (SpotifyImports is null)
+            return;
+        _spotifyImport ??= new SpotifyImportViewModel(SpotifyImports(), _catalog, _local?.PlaylistLibrary,
+            () => _actions.IsSignedIn?.Invoke() == true, this, _actions, () => Account?.Invoke());
+        _spotifyImport.Shown();
+        if (!ReferenceEquals(Current, _spotifyImport))
+            Push(_spotifyImport);
+    }
+
+    /// <summary>A playlist on this computer. Null-safe where local playlists
+    /// aren't composed: nothing opens.</summary>
+    public void OpenLocalPlaylist(string id)
+    {
+        if (_local?.PlaylistLibrary is not { } library)
+            return;
+        Push(new LocalPlaylistPageViewModel(library, id, _local.Scans, _coordinator, this, _actions));
+    }
+
+    /// <summary>The Moods &amp; genres grid, from the last chip of Home's chip row.</summary>
+    public void OpenMoods()
+    {
+        var page = new MoodsPageViewModel(_catalog, this);
+        Push(page);
+        _ = page.LoadAsync();
+    }
+
+    /// <summary>One mood or genre's page, from a tile or a shelf's "See all".</summary>
+    public void OpenMoodCategory(MoodCategory category)
+    {
+        var page = new MoodCategoryPageViewModel(_catalog, this, category);
+        Push(page);
+        _ = page.LoadAsync();
+    }
+
+    /// <summary>A Last.fm station's page, over the station's own rows: a Home
+    /// shelf's or an artist's.</summary>
+    public void OpenStation(StationShelfViewModel station) => Push(new StationPageViewModel(station));
+
+    public void OpenArtist(string browseId)
+    {
+        var page = new ArtistPageViewModel(_catalog, _coordinator, this, browseId)
+        {
+            Actions = _actions,
+            Stations = _stations,
+        };
+        Push(page);
+        _ = page.LoadAsync();
+    }
+
+    public async Task OpenEntryAsync(CatalogEntry entry)
+    {
+        switch (entry)
+        {
+            case SongEntry song:
+                await PlaySongWithRadioAsync(song.Track);
+                break;
+            case AlbumEntry album:
+                OpenAlbum(album.BrowseId);
+                break;
+            case PlaylistEntry playlist:
+                OpenPlaylist(playlist.PlaylistId);
+                break;
+            case ArtistEntry artist:
+                OpenArtist(artist.BrowseId);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// A card's play button: plays an album or playlist without
+    /// opening it (<see cref="CollectionActionsViewModel.PlayAsync"/>, which the
+    /// card's menu shares). Songs take the same route as a click.
+    /// </summary>
+    public Task PlayEntryAsync(CatalogEntry entry) =>
+        entry is SongEntry song ? PlaySongWithRadioAsync(song.Track) : Collections.PlayAsync(entry);
+
+    /// <summary>
+    /// A lone song from a shelf (Home, Library, an artist's page) plays at once and its
+    /// radio follows it, the way YTM does it.
+    /// The radio is fetched alongside playback rather than before it, so the click is
+    /// never slower than it was. It only extends the queue if that song still heads it.
+    /// </summary>
+    private async Task PlaySongWithRadioAsync(TrackInfo track)
+    {
+        var radio = _catalog.GetRadioAsync(track.VideoId);
+        await _coordinator.PlayQueueAsync([track]);
+
+        try
+        {
+            _coordinator.ExtendFromSeed(track, await radio);
+        }
+        catch (Exception ex)
+        {
+            // The song itself still plays; say why nothing will follow it.
+            _actions.ReportError(Strings.Format("toast.radioFailed", ("title", track.Title), ("error", ex.Message)));
+        }
+    }
+
+    [RelayCommand]
+    public void Back()
+    {
+        if (_backStack.Count == 0)
+            return;
+
+        if (Current is not null)
+            _forwardStack.Push(new Entry(Current, Section, _currentIsRoot));
+        Show(_backStack.Pop());
+        UpdateHistoryState();
+    }
+
+    /// <summary>Undoes a Back (mouse forward button, Alt+→). The page comes back as
+    /// it was left, data and scroll position included.</summary>
+    [RelayCommand]
+    public void Forward()
+    {
+        if (_forwardStack.Count == 0)
+            return;
+
+        if (Current is not null)
+            _backStack.Push(new Entry(Current, Section, _currentIsRoot));
+        Show(_forwardStack.Pop());
+        UpdateHistoryState();
+    }
+
+    // The sidebar entry comes back with the page, so Back to a root lights its entry.
+    private void Show(Entry entry)
+    {
+        Section = entry.Section;
+        _currentIsRoot = entry.IsRoot;
+        Current = entry.Page;
+    }
+
+    /// <summary>
+    /// A sidebar entry (or a shortcut to a root) navigates like any page: the page
+    /// it leaves goes onto the back stack and the forward stack is dropped. Asking
+    /// for the root that is already showing adds nothing, and a root that is made
+    /// anew (Settings, a Library after a session change) takes the place of the
+    /// old one. A root page opens at its top, as a sidebar click means "start
+    /// here": only Back and Forward return to where a page was left.
+    /// </summary>
+    /// <param name="reset">Drops the history first, so the root has no way back
+    /// (a link that opens a search, see <see cref="GoSearch(string)"/>).</param>
+    private void NavigateRoot(ViewModelBase page, NavSection section, bool reset = false)
+    {
+        if (reset)
+            ClearHistory();
+
+        var sameRoot = Current is not null && _currentIsRoot && section != NavSection.None && section == Section;
+        if (!ReferenceEquals(page, Current))
+        {
+            page.SavedScrollOffset = 0;
+            if (Current is not null && !sameRoot && !reset)
+            {
+                _backStack.Push(new Entry(Current, Section, _currentIsRoot));
+                _forwardStack.Clear();
+            }
+        }
+
+        Section = section;
+        _currentIsRoot = true;
+        Current = page;
+        UpdateHistoryState();
+    }
+
+    /// <summary>
+    /// Drops every way back and forward, leaving the page on screen. Runs when
+    /// requests start going out as someone else, so no earlier page (loaded for
+    /// the old session) can be reached again.
+    /// </summary>
+    public void ClearHistory()
+    {
+        _backStack.Clear();
+        _forwardStack.Clear();
+        UpdateHistoryState();
+    }
+
+    private void Forget(ViewModelBase page)
+    {
+        Remove(_backStack, page);
+        Remove(_forwardStack, page);
+        UpdateHistoryState();
+
+        static void Remove(Stack<Entry> stack, ViewModelBase page)
+        {
+            var kept = stack.Where(e => !ReferenceEquals(e.Page, page)).Reverse().ToArray();
+            stack.Clear();
+            foreach (var entry in kept)
+                stack.Push(entry);
+        }
+    }
+
+    private void Push(ViewModelBase page)
+    {
+        if (Current is not null)
+            _backStack.Push(new Entry(Current, Section, _currentIsRoot));
+        _forwardStack.Clear();
+        _currentIsRoot = false;
+        Current = page;
+        UpdateHistoryState();
+    }
+
+    // Back and Forward return to the Library too; a tab a save or subscribe
+    // changed meanwhile reloads then.
+    partial void OnCurrentChanged(ViewModelBase? value)
+    {
+        if (value is not null && ReferenceEquals(value, _library))
+            _ = _library.EnsureLoadedAsync();
+        else if (value is not null && ReferenceEquals(value, _stats))
+            _ = _stats.LoadAsync();
+    }
+
+    private void UpdateHistoryState()
+    {
+        CanGoBack = _backStack.Count > 0;
+        CanGoForward = _forwardStack.Count > 0;
+    }
+}

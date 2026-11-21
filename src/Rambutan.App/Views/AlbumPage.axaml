@@ -1,0 +1,299 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Rambutan.App.Localization"
+             xmlns:vm="using:Rambutan.App.ViewModels"
+             xmlns:controls="using:Rambutan.App.Controls"
+             xmlns:views="using:Rambutan.App.Views"
+             xmlns:core="using:Rambutan.Core.Models"
+             xmlns:conv="using:Rambutan.App.Converters"
+             x:Class="Rambutan.App.Views.AlbumPage"
+             x:Name="Root"
+             x:DataType="vm:AlbumPageViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- Gives way to a thin bar once the list is scrolled. -->
+    <controls:CollapsingHero Grid.Row="0" List="{Binding #TrackList}"
+                             Title="{Binding Title}" CoverUrl="{Binding ThumbnailUrl}">
+    <Grid ColumnDefinitions="Auto,*" Margin="4,0,16,20">
+      <Grid.IsVisible>
+        <!-- A failed first load has no title, art or tracks to head: the
+             error state takes the page instead of an empty header. -->
+        <MultiBinding Converter="{x:Static BoolConverters.Or}">
+          <Binding Path="LoadError" Converter="{x:Static ObjectConverters.IsNull}" />
+          <Binding Path="!!Tracks.Count" />
+        </MultiBinding>
+      </Grid.IsVisible>
+      <Border Classes="heroart" Width="176" Height="176">
+        <controls:RemoteImage Url="{Binding ThumbnailUrl}" Stretch="UniformToFill" />
+      </Border>
+      <StackPanel Grid.Column="1" Margin="24,0,0,0" Spacing="6" VerticalAlignment="Bottom">
+        <TextBlock Classes="herotitle" Text="{Binding Title}" />
+        <!-- Artist • Album • 2013. The artist is a link when YTM gave it a
+             channel; before, only a row's context menu navigated. -->
+        <WrapPanel Orientation="Horizontal">
+          <Button Classes="textlink"
+                  IsVisible="{Binding Artist.BrowseId, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}"
+                  ToolTip.Tip="{l:T common.goToArtist}"
+                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToArtistCommand}"
+                  CommandParameter="{Binding Artist}">
+            <TextBlock Text="{Binding Artist.Name}" />
+          </Button>
+          <TextBlock Classes="headermeta" Text="{Binding Artist.Name}"
+                     IsVisible="{Binding Artist.BrowseId, Converter={x:Static ObjectConverters.IsNull}, FallbackValue=False}" />
+          <TextBlock Classes="headermeta" Text=" • "
+                     IsVisible="{Binding Artist, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <TextBlock Classes="headermeta" Text="{Binding Details}" />
+        </WrapPanel>
+        <TextBlock Classes="headersummary" Text="{Binding Summary}"
+                   IsVisible="{Binding Summary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <!-- The copy kept with the downloads: says so, with its date, and
+             offers a retry that loads the live page over it. -->
+        <!-- Retry is a button under the notice, not a link at the far end of
+             the line, where it read as plain text. -->
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto"
+              IsVisible="{Binding KeptNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <PathIcon Data="{StaticResource Icon.Download}" Width="14" Height="14" Opacity="0.7"
+                    VerticalAlignment="Top" Margin="0,2,8,0" />
+          <TextBlock Grid.Column="1" Classes="headermeta" Text="{Binding KeptNotice}" TextWrapping="Wrap"
+                     AutomationProperties.LiveSetting="Polite" />
+          <Button Grid.Row="1" Grid.Column="1" Content="{l:T common.retry}" Command="{Binding ReloadCommand}"
+                  HorizontalAlignment="Left" Margin="0,8,0,0" Padding="12,2" MinHeight="0"
+                  FontSize="{StaticResource Token.Font.Caption}" />
+        </Grid>
+        <!-- The hero pattern: one labelled primary, then outlined icons, each
+             named by its tooltip and accessible name. -->
+        <controls:ActionRow Spacing="12" Margin="0,12,0,0">
+          <Button Classes="accent heroprimary" controls:ActionRow.Keep="True" Command="{Binding PlayAllCommand}"
+                  IsEnabled="{Binding !!Tracks.Count}"
+                  ToolTip.Tip="{l:T common.play}" AutomationProperties.Name="{l:T common.play}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <PathIcon Data="{StaticResource Icon.Play}" Width="18" Height="18" VerticalAlignment="Center" />
+              <TextBlock Text="{l:T common.play}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="icon outline" Command="{Binding ShuffleCommand}" IsEnabled="{Binding !!Tracks.Count}"
+                  ToolTip.Tip="{l:T common.shuffle}" AutomationProperties.Name="{l:T common.shuffle}">
+            <PathIcon Data="{StaticResource Icon.Shuffle}" Width="18" Height="18" />
+          </Button>
+          <!-- The collection's download state: the arrow, a progress
+               ring round it while jobs run, and a filled check once all is
+               downloaded, when a press removes the downloads (with Undo). -->
+          <Button Classes="icon outline" Command="{Binding DownloadButton.PressCommand}" IsEnabled="{Binding !!Tracks.Count}"
+                  IsVisible="{Binding CanDownload}"
+                  ToolTip.Tip="{Binding DownloadButton.Tip}" AutomationProperties.Name="{Binding DownloadButton.Name}">
+            <Panel>
+              <PathIcon Data="{StaticResource Icon.Download}" Width="18" Height="18"
+                        IsVisible="{Binding !DownloadButton.IsDownloaded, FallbackValue=True}" />
+              <PathIcon Data="{StaticResource Icon.DownloadDone}" Width="18" Height="18"
+                        Foreground="{StaticResource Token.Brush.Accent}"
+                        IsVisible="{Binding DownloadButton.IsDownloaded, FallbackValue=False}" />
+              <Arc Classes="downloadprogress" SweepAngle="{Binding DownloadButton.SweepAngle, FallbackValue=0}"
+                   IsVisible="{Binding DownloadButton.IsDownloading, FallbackValue=False}" />
+            </Panel>
+          </Button>
+          <!-- Shown only when the saved state is known: signed out it would always
+               read "not saved". The name and tooltip say what a press does now. -->
+          <Button Classes="icon outline" Command="{Binding ToggleLibraryCommand}"
+                  IsVisible="{Binding CanSave}"
+                  ToolTip.Tip="{Binding InLibrary, Converter={x:Static vm:Converters.AlbumLibraryAction}}"
+                  AutomationProperties.Name="{Binding InLibrary, Converter={x:Static vm:Converters.AlbumLibraryAction}}">
+            <Panel>
+              <PathIcon Data="{StaticResource Icon.LibraryAdd}" Width="18" Height="18" IsVisible="{Binding !IsSaved}" />
+              <PathIcon Data="{StaticResource Icon.LibraryAdded}" Width="18" Height="18" IsVisible="{Binding IsSaved}" />
+            </Panel>
+          </Button>
+          <!-- In More; its name says what a press does now. -->
+          <Button Classes="icon outline" controls:ActionRow.InMenu="True" Command="{Binding Pin.ToggleCommand, FallbackValue={x:Null}}"
+                  IsVisible="{Binding Pin.CanPin, FallbackValue=False}"
+                  AutomationProperties.Name="{Binding Pin.Name, FallbackValue={x:Static vm:SidebarPinToggle.FallbackName}}">
+            <Panel>
+              <PathIcon Data="{StaticResource Icon.Pin}" Width="18" Height="18" IsVisible="{Binding !Pin.IsPinned, FallbackValue=True}" />
+              <PathIcon Data="{StaticResource Icon.PinFilled}" Width="18" Height="18" IsVisible="{Binding Pin.IsPinned, FallbackValue=False}" />
+            </Panel>
+          </Button>
+          <ProgressBar IsIndeterminate="True" Width="80" AutomationProperties.Name="{l:T common.loading}" IsVisible="{Binding IsLoading}" />
+        </controls:ActionRow>
+
+      </StackPanel>
+    </Grid>
+    </controls:CollapsingHero>
+
+
+    <StackPanel Grid.Row="1" Spacing="8" VerticalAlignment="Top" Margin="4,0,16,0">
+      <StackPanel.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="IsLoading" />
+          <Binding Path="!Tracks.Count" />
+        </MultiBinding>
+      </StackPanel.IsVisible>
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+      <Border Classes="skeleton" Height="48" CornerRadius="8" />
+    </StackPanel>
+
+    <ListBox x:Name="TrackList" Grid.Row="1" Classes="tracks pagescroll" Background="Transparent" ItemsSource="{Binding Tracks}"
+             AutomationProperties.Name="{l:T common.tracks}"
+             controls:ScrollMemory.IsEnabled="True"
+             controls:ItemActivation.Command="{Binding PlayFromCommand}"
+             controls:TrackColumns.HasLiked="True"
+             controls:TrackColumns.ItemInset="16"
+             controls:TrackColumns.FixedWidth="208">
+      <!-- Columns at fixed positions (Controls/TrackColumns): FixedWidth is the
+           number 40, actions 112 and duration 56; ItemInset the item's padding. -->
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="core:TrackInfo">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="0,2"
+                Background="Transparent" HorizontalAlignment="Left"
+                Width="{Binding $parent[ListBox].(controls:TrackColumns.RowWidth)}"
+                controls:TrackMenu.Track="{Binding}">
+            <!-- Track number, or the playing marker in its place.
+                 The slot is always present so titles keep a common left edge. -->
+            <Panel Grid.Column="0" Width="28" Margin="0,0,12,0">
+              <TextBlock Classes="tracknumber" Text="{Binding TrackNumber}">
+                <TextBlock.IsVisible>
+                  <MultiBinding Converter="{x:Static conv:IsPlayingTrackConverter.Inverted}">
+                    <Binding Path="Identity" />
+                    <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Player.NowPlaying.Identity" />
+                  </MultiBinding>
+                </TextBlock.IsVisible>
+              </TextBlock>
+              <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Foreground="{StaticResource Token.Brush.Accent}">
+                <PathIcon.IsVisible>
+                  <MultiBinding Converter="{x:Static conv:IsPlayingTrackConverter.Instance}">
+                    <Binding Path="Identity" />
+                    <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Player.NowPlaying.Identity" />
+                  </MultiBinding>
+                </PathIcon.IsVisible>
+              </PathIcon>
+            </Panel>
+            <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+              <TextBlock Classes="rowtitle" Text="{Binding Title}" />
+              <!-- The downloaded mark leads the meta line, so titles keep their edge. -->
+              <DockPanel>
+                <PathIcon DockPanel.Dock="Left" Classes="downloadmark">
+                  <PathIcon.IsVisible>
+                    <MultiBinding Converter="{x:Static conv:IsDownloadedConverter.Instance}">
+                      <Binding Path="VideoId" />
+                      <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Actions.DownloadedIds" />
+                    </MultiBinding>
+                  </PathIcon.IsVisible>
+                </PathIcon>
+                <!-- Left out when it only repeats the album's artist, which the
+                     header names; the row's spoken name keeps it. -->
+                <TextBlock Classes="rowmeta" Text="{Binding ArtistDisplay}">
+                  <TextBlock.IsVisible>
+                    <MultiBinding Converter="{x:Static conv:AlbumArtistLineConverter.Shows}">
+                      <Binding Path="Artists" />
+                      <Binding Path="#Root.((vm:AlbumPageViewModel)DataContext).Artist" />
+                    </MultiBinding>
+                  </TextBlock.IsVisible>
+                </TextBlock>
+              </DockPanel>
+            </StackPanel>
+            <!-- Visual only: the Like button in the actions says the state. -->
+            <Panel Grid.Column="2" Width="24"
+                   IsVisible="{Binding $parent[ListBox].(controls:TrackColumns.ShowsLiked)}">
+              <controls:LikedMark Classes="likedmark" Track="{Binding}" />
+            </Panel>
+            <TextBlock Grid.Column="4" Classes="rowmeta"
+                       Text="{Binding Duration, Converter={x:Static conv:DurationFormat.Converter}}"
+                       MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0" />
+            <Panel Grid.Column="3" Width="112">
+              <StackPanel Classes="rowactions" Orientation="Horizontal"
+                          HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.playFromHere}"
+                        Command="{Binding #Root.((vm:AlbumPageViewModel)DataContext).PlayFromCommand}"
+                        CommandParameter="{Binding}">
+                  <PathIcon Data="{StaticResource Icon.Play}" Width="16" Height="16" />
+                </Button>
+                <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToQueue}"
+                        Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToQueueCommand}"
+                        CommandParameter="{Binding}">
+                  <PathIcon Data="{StaticResource Icon.Add}" Width="16" Height="16" />
+                </Button>
+                <controls:RateButton Classes="icon subtle small" IconSize="16" Kind="Like"
+                                     Track="{Binding}"
+                                     Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.LikeCommand}"
+                                     CommandParameter="{Binding}" />
+                <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToPlaylist}"
+                        Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToPlaylistCommand}"
+                        CommandParameter="{Binding}">
+                  <PathIcon Data="{StaticResource Icon.AddToPlaylist}" Width="16" Height="16" />
+                </Button>
+              </StackPanel>
+            </Panel>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <!-- More by the album's artist, beside the rows on a pane with room for
+         both (Core/Layout/SideColumnFit; the code-behind places it past the
+         rows' widest). It lies over the list's empty right part, level with
+         the first row, and scrolls by itself, since it is often taller than
+         the pane. After the list, so Tab reaches it last. -->
+    <ScrollViewer x:Name="SideColumn" Grid.Row="1" HorizontalAlignment="Left"
+                  HorizontalScrollBarVisibility="Disabled"
+                  IsVisible="{Binding ShowsSideColumn}">
+      <StackPanel Spacing="14" Margin="0,0,12,16">
+        <!-- A failure stays in the column, never over the tracks. -->
+        <Grid ColumnDefinitions="*,Auto"
+              IsVisible="{Binding ArtistError, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <ContentControl Content="{Binding ArtistError}" HorizontalAlignment="Left"
+                          ContentTemplate="{StaticResource ErrorState.Compact}"
+                          AutomationProperties.LiveSetting="Polite" />
+          <Button Grid.Column="1" Classes="icon subtle small" Command="{Binding DismissArtistErrorCommand}"
+                  ToolTip.Tip="{l:T common.dismiss}" AutomationProperties.Name="{l:T common.dismiss}">
+            <PathIcon Data="{StaticResource Icon.Close}" Width="14" Height="14" />
+          </Button>
+        </Grid>
+
+        <StackPanel Spacing="8" IsVisible="{Binding IsLoadingArtist}"
+                    AutomationProperties.Name="{l:T common.loading}">
+          <Border Classes="skeleton" Height="24" Width="220" CornerRadius="6" HorizontalAlignment="Left" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="24" Width="120" CornerRadius="6" HorizontalAlignment="Left" Margin="0,14,0,0" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Border Classes="skeleton" Width="168" Height="168" CornerRadius="8" />
+            <Border Classes="skeleton" Width="168" Height="168" CornerRadius="8" />
+            <Border Classes="skeleton" Width="168" Height="168" CornerRadius="8" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Spacing="14" IsVisible="{Binding !!ArtistSongs.Count}">
+          <TextBlock Text="{Binding ArtistSongsTitle}" FontSize="{StaticResource Token.Font.Section}" FontWeight="Bold" />
+          <views:TopSongRows Songs="{Binding ArtistSongs}" ListName="{Binding ArtistSongsTitle}"
+                             PlayFromCommand="{Binding PlayArtistSongFromCommand}" />
+        </StackPanel>
+
+        <ItemsControl ItemsSource="{Binding ArtistShelves}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="core:Shelf">
+              <views:ShelfView Margin="0,6,0,14"
+                               OpenCommand="{Binding #Root.((vm:AlbumPageViewModel)DataContext).OpenEntryCommand}"
+                               PlayCommand="{Binding #Root.((vm:AlbumPageViewModel)DataContext).PlayEntryCommand}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Load failed with nothing to show: the failure takes the page. Declared last so it sits above the
+         (empty, but hit-testable) list in the same cell, which would otherwise
+         swallow clicks on Try again and Details. -->
+    <ContentControl Margin="0,0,12,0" Grid.Row="1" Content="{Binding LoadError}"
+                    ContentTemplate="{StaticResource ErrorState.Full}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    IsVisible="{Binding !Tracks.Count}" />
+  </Grid>
+</UserControl>

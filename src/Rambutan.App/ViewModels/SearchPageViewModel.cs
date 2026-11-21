@@ -1,0 +1,870 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Rambutan.App.Controls;
+using Rambutan.App.Localization;
+using Rambutan.App.Services;
+using Rambutan.Core.Catalog;
+using Rambutan.Core.Diagnostics;
+using Rambutan.Core.Models;
+using Rambutan.Core.Playback;
+
+namespace Rambutan.App.ViewModels;
+
+/// <summary>
+/// One chip above the results. <see cref="Filter"/> null is "All": the unfiltered
+/// search with YTM's top result. It stays an App notion because
+/// Core's <see cref="SearchFilter"/> maps one to one onto YTM's filter params.
+/// </summary>
+public sealed record SearchTab(SearchFilter? Filter)
+{
+    public static SearchTab All { get; } = new((SearchFilter?)null);
+}
+
+/// <summary>The kinds the All tab's results are grouped by.</summary>
+public enum SearchResultGroup
+{
+    Songs,
+    Videos,
+    /// <summary>Rows that play but whose answer didn't say which they are.</summary>
+    SongsAndVideos,
+    Albums,
+    Artists,
+    Playlists,
+    Other,
+}
+
+/// <summary>A group's heading as a row of the All tab's results: not selected,
+/// not opened, spoken as a heading. <see cref="SeeAll"/> is the tab that lists
+/// only that kind, null where none does. A class, not a record: two headings of
+/// the same kind are two rows.</summary>
+public sealed class SearchResultHeading(SearchResultGroup group, SearchTab? seeAll) : IHasAccessibleName
+{
+    public SearchResultGroup Group { get; } = group;
+
+    public SearchTab? SeeAll { get; } = seeAll;
+
+    public string Title => Strings.Get(Group switch
+    {
+        SearchResultGroup.Songs => "search.filter.songs",
+        SearchResultGroup.Videos => "search.filter.videos",
+        SearchResultGroup.SongsAndVideos => "search.group.songsAndVideos",
+        SearchResultGroup.Albums => "search.filter.albums",
+        SearchResultGroup.Artists => "search.filter.artists",
+        SearchResultGroup.Playlists => "search.filter.playlists",
+        _ => "search.group.other",
+    });
+
+    public string AccessibleName => Title;
+
+    // The heading is rebuilt with each answer; its text doesn't change in place.
+    event System.ComponentModel.PropertyChangedEventHandler? System.ComponentModel.INotifyPropertyChanged.PropertyChanged { add { } remove { } }
+}
+
+/// <summary>A group of the All tab's results as a shelf of cards in the side
+/// column. <see cref="SeeAll"/> is the tab that lists only that kind.</summary>
+public sealed record SearchSideShelf(Shelf Shelf, SearchTab? SeeAll);
+
+/// <summary>A query from this machine's search history, in the drop-down and on
+/// the resting page.</summary>
+public sealed record RecentQueryItem(string Query)
+{
+    /// <summary>The remove button's screen-reader name; names the query so a list of
+    /// identical buttons can be told apart.</summary>
+    public string RemoveName => Strings.Format("search.removeRecentNamed", ("value", Query));
+}
+
+/// <summary>A completion YTM offered for the typed text; <see cref="FromHistory"/>
+/// marks the signed-in account's own past searches.</summary>
+public sealed record QuerySuggestionItem(string Query, bool FromHistory);
+
+public partial class SearchPageViewModel : ViewModelBase
+{
+    private readonly ICatalog _catalog;
+    private readonly PlaybackCoordinator _coordinator;
+    private readonly NavigationService _navigation;
+    private readonly SearchHistory _history;
+    private readonly LocalSearchFunc? _searchLocal;
+
+    [ObservableProperty] private string _query = "";
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private LoadError? _loadError;
+    private SearchTab _selectedTab = SearchTab.All;
+
+    /// <summary>The filter on screen; changing it searches again. Null (a chip list
+    /// cleared by Ctrl+click) is ignored: one filter is always selected.</summary>
+    public SearchTab SelectedTab
+    {
+        get => _selectedTab;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedTab, value))
+                return;
+            SearchCommand.Execute(null);
+        }
+    }
+    /// <summary>Distinguishes "no results" from "hasn't searched yet" (empty states).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsEmptyHint))]
+    private bool _hasSearched;
+
+    /// <summary>The searches this machine remembers, newest first: the resting
+    /// page's chips. Follows <see cref="SearchHistory.Changed"/>.</summary>
+    public ObservableCollection<RecentQueryItem> Recent { get; } = [];
+
+    public bool HasRecent => Recent.Count > 0;
+
+    /// <summary>Moods &amp; genres under the recent searches; null where the page
+    /// has no catalog to ask.</summary>
+    public MoodsPageViewModel? Moods { get; }
+
+    /// <summary>The moods section (title and tiles or their skeleton) shows: it
+    /// is loading or it has tiles. A failure takes its place, compact.</summary>
+    public bool ShowsMoodsSection => Moods is { LoadError: null, IsEmpty: false };
+
+    /// <summary>The resting page has no history and no tiles to show, so the
+    /// sentence says what the page is for.</summary>
+    public bool ShowsEmptyHint =>
+        !HasSearched && !HasRecent && (Moods is null || Moods.IsEmpty || Moods.LoadError is not null);
+
+    private bool _moodsRequested;
+
+    /// <summary>Loads the moods the first time the page is shown. A failed load is
+    /// retried by its error's Try again, not on each visit.</summary>
+    public void EnsureMoodsLoaded()
+    {
+        if (_moodsRequested || Moods is null)
+            return;
+        _moodsRequested = true;
+        _ = Moods.LoadAsync();
+    }
+
+    /// <summary>A filtered search has another page; the view asks for it as the
+    /// list nears its end. Always false on All, which YTM doesn't page.</summary>
+    [ObservableProperty] private bool _hasMore;
+    [ObservableProperty] private bool _isLoadingMore;
+
+    /// <summary>The next page failed. Shown under the results, which stay, with
+    /// Try again; <see cref="LoadError"/> is for a search that has nothing to show.</summary>
+    [ObservableProperty] private LoadError? _moreError;
+
+    /// <summary>What the next page continues: the query and filter of the search
+    /// on screen, and its token. Null when there is no next page.</summary>
+    private (string Query, SearchFilter Filter, ContinuationToken Token)? _next;
+
+    /// <summary>YTM's top-result card, on the All tab only.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TopIsSong), nameof(TopIsArtist))]
+    private TopResult? _topResult;
+
+    /// <summary>The card plays a song and opens anything else.</summary>
+    public bool TopIsSong => TopResult?.Entry is SongEntry;
+
+    /// <summary>Artists get round art, as in every other list.</summary>
+    public bool TopIsArtist => TopResult?.Entry is ArtistEntry;
+
+    public IReadOnlyList<SearchTab> Tabs { get; } =
+        [SearchTab.All, new(SearchFilter.Songs), new(SearchFilter.Videos), new(SearchFilter.Albums),
+         new(SearchFilter.Artists), new(SearchFilter.Playlists)];
+
+    public ObservableCollection<CatalogEntry> Results { get; } = [];
+
+    /// <summary>What the results list shows: <see cref="Results"/>, under a
+    /// <see cref="SearchResultHeading"/> per kind on the All tab (the kinds in the
+    /// order they first come in the answer, each kind's rows in theirs), as they
+    /// are on a type's tab.</summary>
+    public ObservableCollection<object> Rows { get; } = [];
+
+    /// <summary>The pane has room for a side column (the view says so, from
+    /// <see cref="Rambutan.Core.Layout.SideColumnFit"/>). While it has, the All
+    /// tab's albums, artists and playlists leave <see cref="Rows"/> for
+    /// <see cref="SideShelves"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsSideColumn))]
+    private bool _hasSideRoom;
+
+    /// <summary>The All tab's groups of cards, in the order the kinds first come
+    /// in the answer. Empty without <see cref="HasSideRoom"/>, on a type's tab,
+    /// and when the answer has no such group.</summary>
+    public ObservableCollection<SearchSideShelf> SideShelves { get; } = [];
+
+    /// <summary>A first All search is loading with nothing on screen yet, on a
+    /// pane with a side column: both columns show their skeletons.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsSideColumn))]
+    private bool _showsColumnSkeletons;
+
+    /// <summary>The side column shows: it has shelves, or their skeletons.</summary>
+    public bool ShowsSideColumn => HasSideRoom && (SideShelves.Count > 0 || ShowsColumnSkeletons);
+
+    /// <summary>Whether <see cref="Rows"/> are the All tab's, under headings.</summary>
+    private bool _grouped;
+
+    partial void OnHasSideRoomChanged(bool value)
+    {
+        if (!value)
+            ShowsColumnSkeletons = false;
+        // A type's tab has no groups to move, and its rows keep their place.
+        if (_grouped)
+            ShowRows(grouped: true);
+    }
+
+    /// <summary>Searches the local index: the query, how many rows to return at
+    /// most, and the search's token. Null where there is no local library.</summary>
+    public delegate Task<(IReadOnlyList<LocalTrackRow> Rows, int Total)> LocalSearchFunc(
+        string query, int limit, CancellationToken ct);
+
+    /// <summary>The On this computer shelf's rows before and after Show more. It is
+    /// part of a plain panel that builds every row, so it never holds thousands.</summary>
+    internal const int LocalShownCollapsed = 5;
+    internal const int LocalKept = 50;
+
+    /// <summary>The local matches on the shelf, on the All tab only.</summary>
+    public ObservableCollection<LocalTrackRow> LocalResults { get; } = [];
+
+    private IReadOnlyList<LocalTrackRow> _localFound = [];
+    private int _localTotal;
+
+    [ObservableProperty] private bool _hasLocalResults;
+
+    /// <summary>"12 songs": every local match, shown or not.</summary>
+    [ObservableProperty] private string _localCount = "";
+
+    [ObservableProperty] private bool _canShowMoreLocal;
+
+    /// <summary>Says the shelf stops short of every match; null when it doesn't.</summary>
+    [ObservableProperty] private string? _localCapped;
+
+    // Design-time
+    public SearchPageViewModel() : this(null!, null!, null!)
+    {
+        Results.Add(new SongEntry
+        {
+            Title = "Instant Crush",
+            Subtitle = "Daft Punk",
+            Track = new TrackInfo
+            {
+                VideoId = "x", Title = "Instant Crush", Artists = [new("Daft Punk")],
+                Album = "Random Access Memories", Duration = TimeSpan.FromMinutes(5),
+            },
+        });
+        Results.Add(new AlbumEntry
+        {
+            Title = "Random Access Memories", Subtitle = "Album • Daft Punk • 2013", BrowseId = "x",
+        });
+        ShowRows(grouped: true);
+    }
+
+    public SearchPageViewModel(
+        ICatalog catalog, PlaybackCoordinator coordinator, NavigationService navigation,
+        SearchHistory? history = null, LocalSearchFunc? searchLocal = null,
+        MoodsPageViewModel? moods = null)
+    {
+        _catalog = catalog;
+        _coordinator = coordinator;
+        _navigation = navigation;
+        _history = history ?? new SearchHistory(null);
+        _searchLocal = searchLocal;
+        Moods = moods;
+        if (moods is not null)
+            moods.LeavesOutRepeats = true;
+
+        SyncRecent();
+        _history.Changed += OnHistoryChanged;
+        if (Moods is not null)
+        {
+            Moods.PropertyChanged += (_, _) =>
+            {
+                OnPropertyChanged(nameof(ShowsMoodsSection));
+                OnPropertyChanged(nameof(ShowsEmptyHint));
+            };
+        }
+    }
+
+    private void OnHistoryChanged()
+    {
+        SyncRecent();
+        // The drop-down's recent rows follow a remove or a clear made anywhere.
+        foreach (var gone in Dropdown.OfType<RecentQueryItem>()
+                     .Where(r => !_history.Queries.Contains(r.Query)).ToList())
+        {
+            Dropdown.Remove(gone);
+        }
+        IsDropdownOpen = IsDropdownOpen && Dropdown.Count > 0;
+    }
+
+    private void SyncRecent()
+    {
+        Recent.Clear();
+        foreach (var query in _history.Queries)
+            Recent.Add(new RecentQueryItem(query));
+        OnPropertyChanged(nameof(HasRecent));
+        OnPropertyChanged(nameof(ShowsEmptyHint));
+    }
+
+    // While typing, the drop-down lists the recent queries that match, then YTM's
+    // completions, then the entities YTM matched outright. An empty box lists
+    // nothing: the page under it shows the recent searches.
+
+    /// <summary>Recent queries, YTM's completions and matched entities, in that order.</summary>
+    public ObservableCollection<object> Dropdown { get; } = [];
+
+    [ObservableProperty] private bool _isDropdownOpen;
+
+    internal const int RecentShownWhileTyping = 3;
+    internal static readonly TimeSpan SuggestDelay = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>The pause before asking YTM, so a fast typist sends one request,
+    /// not one per key. Replaced in tests.</summary>
+    internal Func<TimeSpan, CancellationToken, Task> Delay { get; set; } = Task.Delay;
+
+    private bool _fieldActive;
+    private bool _settingQuery;
+    private CancellationTokenSource? _suggest;
+
+    /// <summary>The view reports whether the box (or the drop-down under it) has
+    /// keyboard focus; the drop-down only shows while it does.</summary>
+    public void SetFieldActive(bool active)
+    {
+        if (_fieldActive == active)
+            return;
+        _fieldActive = active;
+        // Focus alone opens nothing: the list waits for a keystroke, so it never
+        // covers the resting page's recent searches or the results.
+        if (!active)
+            CloseDropdown();
+    }
+
+    /// <summary>Escape, a search, or a pick: hide the list until the next keystroke.</summary>
+    public void CloseDropdown()
+    {
+        _suggest?.Cancel();
+        _suggest = null;
+        IsDropdownOpen = false;
+    }
+
+    partial void OnQueryChanged(string value)
+    {
+        if (_settingQuery)
+            return;
+        // Emptying the box ends the search on screen at once, not at the next Enter.
+        if (string.IsNullOrWhiteSpace(value))
+            ReturnToResting();
+        RefreshDropdown();
+    }
+
+    /// <summary>Drops the search on screen, and any still running, so the page
+    /// shows its resting state and a late answer finds nobody to show it to.</summary>
+    private void ReturnToResting()
+    {
+        _search?.Cancel();
+        _search = null;
+        _more?.Cancel();
+        _more = null;
+        _next = null;
+        HasMore = false;
+        IsLoadingMore = false;
+        MoreError = null;
+        Results.Clear();
+        ClearRows();
+        ShowsColumnSkeletons = false;
+        TopResult = null;
+        ShowLocal([], 0, expanded: false);
+        HasSearched = false;
+        IsBusy = false;
+        LoadError = null;
+    }
+
+    private void RefreshDropdown()
+    {
+        _suggest?.Cancel();
+        _suggest = null;
+        if (!_fieldActive || _catalog is null)
+            return;
+
+        var text = Query.Trim();
+        if (text.Length == 0)
+        {
+            Fill([]);
+            return;
+        }
+
+        // The list on screen stays until the new one is ready, so typing doesn't
+        // make it flicker empty between keys.
+        var suggest = new CancellationTokenSource();
+        _suggest = suggest;
+        _ = SuggestAsync(text, suggest);
+    }
+
+    private async Task SuggestAsync(string text, CancellationTokenSource suggest)
+    {
+        var recent = RecentMatching(text).ToList();
+        SearchSuggestions remote;
+        try
+        {
+            await Delay(SuggestDelay, suggest.Token);
+            remote = await _catalog.GetSearchSuggestionsAsync(text, suggest.Token);
+        }
+        catch (Exception ex)
+        {
+            if (suggest.IsCancellationRequested)
+                return;
+            // Suggestions are a convenience: the box still searches, so the list
+            // keeps only what this machine knows.
+            AppLog.Write("search", $"suggestions for the typed text failed: {ex.Message}");
+            remote = SearchSuggestions.Empty;
+        }
+
+        if (suggest.IsCancellationRequested)
+            return;
+
+        var shown = recent.Select(r => r.Query).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Fill(recent.Cast<object>()
+            .Concat(remote.Queries.Where(q => !shown.Contains(q.Query))
+                .Select(q => new QuerySuggestionItem(q.Query, q.FromHistory)))
+            .Concat(remote.Entries));
+    }
+
+    private IEnumerable<RecentQueryItem> RecentMatching(string text) =>
+        _history.Queries
+            .Where(q => q.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) &&
+                        !string.Equals(q, text, StringComparison.CurrentCultureIgnoreCase))
+            .Take(RecentShownWhileTyping)
+            .Select(q => new RecentQueryItem(q));
+
+    private void Fill(IEnumerable<object> items)
+    {
+        Dropdown.Clear();
+        foreach (var item in items)
+            Dropdown.Add(item);
+        IsDropdownOpen = _fieldActive && Dropdown.Count > 0;
+    }
+
+    /// <summary>A query runs as a search; a song plays on its own (autoplay carries
+    /// on from it); anything else opens.</summary>
+    [RelayCommand]
+    private async Task PickAsync(object? item)
+    {
+        CloseDropdown();
+        switch (item)
+        {
+            case RecentQueryItem recent:
+                RunQuery(recent.Query);
+                break;
+            case QuerySuggestionItem suggestion:
+                RunQuery(suggestion.Query);
+                break;
+            case SongEntry song:
+                await _coordinator.PlayQueueAsync([song.Track], 0);
+                break;
+            case CatalogEntry entry:
+                await _navigation.OpenEntryAsync(entry);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Runs a search a rambutan:// link asked for. It isn't added to the
+    /// search history: a web page can fire such a link, and the history persists.
+    /// </summary>
+    public void RunFromLink(string query)
+    {
+        _forgetNext = true;
+        RunQuery(query);
+    }
+
+    /// <summary>Runs a search typed outside the page (the title bar's field) as
+    /// one typed in the page's box: under the filter on screen, and kept in the
+    /// search history.</summary>
+    public void RunTyped(string query) => RunQuery(query);
+
+    /// <summary>Set for one search that the history must not keep.</summary>
+    private bool _forgetNext;
+
+    private void RunQuery(string query)
+    {
+        _settingQuery = true;
+        try
+        {
+            Query = query;
+        }
+        finally
+        {
+            _settingQuery = false;
+        }
+
+        SearchCommand.Execute(null);
+    }
+
+    [RelayCommand]
+    private void RemoveRecent(string query) => _history.Remove(query);
+
+    [RelayCommand]
+    private void ClearRecent() => _history.Clear();
+
+    /// <summary>The fetch whose results the page will show; any earlier one is stale.</summary>
+    private CancellationTokenSource? _search;
+
+    /// <summary>Raised when the page should take keyboard focus (e.g. Ctrl+F while
+    /// already on Search, where no new view is created to focus itself).</summary>
+    public event Action? FocusRequested;
+
+    public void RequestFocus() => FocusRequested?.Invoke();
+
+    /// <summary>
+    /// Latest wins: each search cancels the one before it, and only the newest may
+    /// write results or clear the busy flag (fetches finish in any order). Concurrent
+    /// executions are allowed so Enter and filter clicks are never swallowed while a
+    /// fetch is in flight; superseding is this method's job, not the command's.
+    /// </summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task SearchAsync()
+    {
+        _search?.Cancel();
+        _search = null;
+        // A page still on its way belongs to the search this one replaces.
+        _more?.Cancel();
+        _more = null;
+        _next = null;
+        HasMore = false;
+        IsLoadingMore = false;
+        MoreError = null;
+
+        if (_catalog is null)
+            return;
+
+        // An empty box means no search, not "the last search under a new filter":
+        // back to the page's resting state.
+        if (string.IsNullOrWhiteSpace(Query))
+        {
+            ReturnToResting();
+            return;
+        }
+
+        CloseDropdown();
+        if (!_forgetNext)
+            _history.Add(Query);
+        _forgetNext = false;
+
+        var search = new CancellationTokenSource();
+        _search = search;
+        IsBusy = true;
+        ShowsColumnSkeletons = HasSideRoom && SelectedTab.Filter is null && Results.Count == 0 && TopResult is null;
+        HasSearched = true;
+        LoadError = null;
+        try
+        {
+            var query = Query.Trim();
+            var filter = SelectedTab.Filter;
+            // Both start at once: the local shelf shows in moments, and it stays
+            // when YouTube Music can't answer (offline is when it matters most).
+            var remote = FetchAsync(query, filter, search.Token);
+            if (filter is null && _searchLocal is not null)
+                await ShowLocalAsync(_searchLocal(query, LocalKept, search.Token), search);
+            else
+                ShowLocal([], 0, expanded: false);
+
+            var (top, entries, next) = await remote;
+            if (search.IsCancellationRequested)
+                return;
+
+            TopResult = top;
+            Results.Clear();
+            foreach (var entry in entries)
+                Results.Add(entry);
+            ShowsColumnSkeletons = false;
+            ShowRows(grouped: filter is null);
+            _next = next;
+            HasMore = next is not null;
+        }
+        catch (Exception ex)
+        {
+            if (!search.IsCancellationRequested)
+            {
+                // A failed search must not leave the previous query's results
+                // standing under the new query and filter.
+                Results.Clear();
+                ClearRows();
+                TopResult = null;
+                LoadError = LoadError.From(ex, LoadSubject.SearchResults, SearchCommand);
+            }
+        }
+        finally
+        {
+            // Not disposed: a superseded search can finish inside the newer one's
+            // Cancel() call, and disposing a source from its own cancellation
+            // callback deadlocks. It has no timer, so the GC owes it nothing.
+            if (_search == search)
+            {
+                _search = null;
+                ShowsColumnSkeletons = false;
+                IsBusy = false;
+            }
+        }
+    }
+
+    private async Task<(TopResult? Top, IReadOnlyList<CatalogEntry> Entries,
+        (string, SearchFilter, ContinuationToken)? Next)> FetchAsync(
+        string query, SearchFilter? filter, CancellationToken ct)
+    {
+        if (filter is { } f)
+        {
+            var page = await _catalog.SearchPagedAsync(query, f, ct);
+            return (null, page.Items, page.Continuation is { } token ? (query, f, token) : null);
+        }
+
+        var overview = await _catalog.SearchAllAsync(query, ct);
+        return (overview.TopResult, overview.Results, null);
+    }
+
+    /// <summary>Puts the local matches on the shelf, unless a newer search has
+    /// started. A local search that fails empties the shelf and is logged: the
+    /// YouTube Music results still come.</summary>
+    private async Task ShowLocalAsync(
+        Task<(IReadOnlyList<LocalTrackRow> Rows, int Total)> local, CancellationTokenSource search)
+    {
+        try
+        {
+            var (rows, total) = await local;
+            if (!search.IsCancellationRequested)
+                ShowLocal(rows, total, expanded: false);
+        }
+        catch (Exception ex)
+        {
+            if (search.IsCancellationRequested)
+                return;
+            AppLog.Write("search", $"searching the local files failed: {ex.Message}");
+            ShowLocal([], 0, expanded: false);
+        }
+    }
+
+    private void ShowLocal(IReadOnlyList<LocalTrackRow> found, int total, bool expanded)
+    {
+        _localFound = found;
+        _localTotal = total;
+        LocalResults.Clear();
+        foreach (var row in expanded ? found : found.Take(LocalShownCollapsed))
+            LocalResults.Add(row);
+        HasLocalResults = LocalResults.Count > 0;
+        CanShowMoreLocal = LocalResults.Count < found.Count;
+        LocalCount = Strings.Format("search.local.count", ("count", total));
+        LocalCapped = expanded && total > LocalResults.Count
+            ? Strings.Format("search.local.capped", ("shown", LocalResults.Count), ("total", total))
+            : null;
+    }
+
+    [RelayCommand]
+    private void ShowMoreLocal() => ShowLocal(_localFound, _localTotal, expanded: true);
+
+    /// <summary>A local row plays with the shelf's rows as its queue.</summary>
+    [RelayCommand]
+    private async Task PlayLocalAsync(LocalTrackRow? row)
+    {
+        var index = row is null ? -1 : LocalResults.IndexOf(row);
+        if (index >= 0)
+            await _coordinator.PlayQueueAsync(LocalResults.Select(r => r.Track).ToList(), index);
+    }
+
+    /// <summary>The page fetch in flight; a new search cancels it.</summary>
+    private CancellationTokenSource? _more;
+
+    /// <summary>
+    /// The next page of the filtered search on screen, appended to its results.
+    /// A no-op while a page or a search is on its way, or when there are no more.
+    /// A page that arrives after a new search has started is dropped.
+    /// </summary>
+    [RelayCommand]
+    public async Task LoadMoreAsync()
+    {
+        if (_next is not { } next || _more is not null || _search is not null || _catalog is null)
+            return;
+
+        var more = new CancellationTokenSource();
+        _more = more;
+        IsLoadingMore = true;
+        MoreError = null;
+        try
+        {
+            var page = await _catalog.GetSearchContinuationAsync(next.Query, next.Filter, next.Token, more.Token);
+            if (more.IsCancellationRequested)
+                return;
+
+            // A row YTM repeats across pages would be the same row twice.
+            var shown = Results.Select(Key).ToHashSet();
+            // Only a type's tab pages, so its rows have no headings: appended, the
+            // rows on screen keep their place and focus.
+            foreach (var entry in page.Items)
+            {
+                if (shown.Add(Key(entry)))
+                {
+                    Results.Add(entry);
+                    Rows.Add(entry);
+                }
+            }
+
+            _next = page.Continuation is { } token && token != next.Token && page.Items.Count > 0
+                ? next with { Token = token }
+                : null;
+            HasMore = _next is not null;
+        }
+        catch (Exception ex)
+        {
+            if (!more.IsCancellationRequested)
+                MoreError = LoadError.From(ex, LoadSubject.MoreResults, LoadMoreCommand);
+        }
+        finally
+        {
+            if (_more == more)
+            {
+                _more = null;
+                IsLoadingMore = false;
+            }
+        }
+    }
+
+    /// <summary>What makes two result rows the same row.</summary>
+    private static string Key(CatalogEntry entry) => entry switch
+    {
+        SongEntry song => "song:" + song.Track.VideoId,
+        AlbumEntry album => "album:" + album.BrowseId,
+        ArtistEntry artist => "artist:" + artist.BrowseId,
+        PlaylistEntry playlist => "playlist:" + playlist.PlaylistId,
+        _ => entry.GetType().Name + ":" + entry.Title,
+    };
+
+    /// <summary>Songs play with the list they came from as their queue; the rest
+    /// navigate. Anything that isn't an entry (a heading of the results) does nothing.</summary>
+    [RelayCommand]
+    private async Task OpenAsync(object? item)
+    {
+        if (item is SongEntry song)
+            await PlayAsync(song);
+        else if (item is CatalogEntry entry)
+            await _navigation.OpenEntryAsync(entry);
+    }
+
+    /// <summary>A side shelf card's play button: the album, playlist or artist.</summary>
+    [RelayCommand]
+    private Task PlayEntryAsync(CatalogEntry entry) => _navigation.PlayEntryAsync(entry);
+
+    /// <summary>A heading's See all: that kind's own tab.</summary>
+    [RelayCommand]
+    private void ShowTab(SearchTab? tab)
+    {
+        if (tab is not null)
+            SelectedTab = tab;
+    }
+
+    /// <summary>Fills <see cref="Rows"/> from <see cref="Results"/>, under headings
+    /// when <paramref name="grouped"/> (the All tab's answer).</summary>
+    private void ShowRows(bool grouped)
+    {
+        _grouped = grouped;
+        Rows.Clear();
+        SideShelves.Clear();
+        if (!grouped)
+        {
+            foreach (var row in Results)
+                Rows.Add(row);
+        }
+        else
+        {
+            foreach (var group in Results.GroupBy(GroupOf))
+            {
+                var heading = new SearchResultHeading(group.Key, TabFor(group.Key));
+                if (HasSideRoom && IsCardGroup(group.Key))
+                {
+                    SideShelves.Add(new SearchSideShelf(new Shelf(heading.Title, group.ToList()), heading.SeeAll));
+                    continue;
+                }
+                Rows.Add(heading);
+                foreach (var entry in group)
+                    Rows.Add(entry);
+            }
+        }
+        OnPropertyChanged(nameof(ShowsSideColumn));
+    }
+
+    /// <summary>Empties what <see cref="ShowRows"/> filled.</summary>
+    private void ClearRows()
+    {
+        Rows.Clear();
+        SideShelves.Clear();
+        OnPropertyChanged(nameof(ShowsSideColumn));
+    }
+
+    /// <summary>The kinds the side column shows as cards; the rows that play,
+    /// and what has no card, stay rows.</summary>
+    private static bool IsCardGroup(SearchResultGroup group) =>
+        group is SearchResultGroup.Albums or SearchResultGroup.Artists or SearchResultGroup.Playlists;
+
+    private static SearchResultGroup GroupOf(CatalogEntry entry) => entry switch
+    {
+        SongEntry { Track.Kind: TrackKind.Song } => SearchResultGroup.Songs,
+        SongEntry { Track.Kind: TrackKind.Video } => SearchResultGroup.Videos,
+        SongEntry => SearchResultGroup.SongsAndVideos,
+        AlbumEntry => SearchResultGroup.Albums,
+        ArtistEntry => SearchResultGroup.Artists,
+        PlaylistEntry => SearchResultGroup.Playlists,
+        _ => SearchResultGroup.Other,
+    };
+
+    /// <summary>The tab that lists only that kind; none for the mixed group,
+    /// which two tabs hold between them, nor for the rest.</summary>
+    private SearchTab? TabFor(SearchResultGroup group) => group switch
+    {
+        SearchResultGroup.Songs => Tabs.Single(t => t.Filter == SearchFilter.Songs),
+        SearchResultGroup.Videos => Tabs.Single(t => t.Filter == SearchFilter.Videos),
+        SearchResultGroup.Albums => Tabs.Single(t => t.Filter == SearchFilter.Albums),
+        SearchResultGroup.Artists => Tabs.Single(t => t.Filter == SearchFilter.Artists),
+        SearchResultGroup.Playlists => Tabs.Single(t => t.Filter == SearchFilter.Playlists),
+        _ => null,
+    };
+
+    [RelayCommand]
+    private async Task PlayAsync(SongEntry song)
+    {
+        var (tracks, index) = QueueFor(song);
+        if (index >= 0)
+            await _coordinator.PlayQueueAsync(tracks, index);
+    }
+
+    /// <summary>
+    /// The queue a song plays in: the rows of the list it sits in. A song inside
+    /// the top-result card plays with the card's other songs, as YTM does; the
+    /// card's own song leads the results.
+    /// </summary>
+    internal (List<TrackInfo> Tracks, int Index) QueueFor(SongEntry song)
+    {
+        IEnumerable<CatalogEntry> list = Results;
+        if (TopResult is { } top)
+        {
+            if (top.Related.OfType<SongEntry>().Any(e => e.Track.VideoId == song.Track.VideoId))
+                list = top.Related;
+            else if (top.Entry is SongEntry lead && lead.Track.VideoId == song.Track.VideoId)
+                list = Results.Prepend(lead);
+        }
+
+        var tracks = list.OfType<SongEntry>().Select(e => e.Track)
+            .DistinctBy(t => t.VideoId).ToList();
+        return (tracks, tracks.FindIndex(t => t.VideoId == song.Track.VideoId));
+    }
+
+    /// <summary>The row "+": the shared Add to queue, so it toasts like the menu's.
+    /// With nothing playing, it also starts.</summary>
+    [RelayCommand]
+    private async Task EnqueueAsync(SongEntry song)
+    {
+        if (_navigation?.Actions is { } actions)
+            actions.AddToQueueCommand.Execute(song.Track);
+        else
+            _coordinator.Queue.Enqueue(song.Track);
+        if (_coordinator.State is PlaybackState.Stopped)
+            await _coordinator.JumpToAsync(_coordinator.Queue.CurrentIndex);
+    }
+}

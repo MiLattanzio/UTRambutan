@@ -1,0 +1,358 @@
+using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.VisualTree;
+using Rambutan.App.Views;
+using Avalonia.Headless;
+using Avalonia.Input;
+using Rambutan.App.Controls;
+using Rambutan.App.Services;
+using Rambutan.App.ViewModels;
+using Rambutan.Core.Models;
+using Rambutan.Core.Stats;
+
+namespace Rambutan.App.Tests;
+
+/// <summary>
+/// The Stats page: a state for every way the log can be, the period's words and
+/// the charts' names, and the heatmap moving by row with the arrow keys.
+/// </summary>
+public class ListeningStatsViewTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 10, 30, 12, 0, 0, TimeSpan.Zero);
+
+    private sealed class Clock : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private static PlayRecord Play(DateTimeOffset at, double minutes, string title = "Song") => new()
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        StartedAt = at,
+        Listened = TimeSpan.FromMinutes(minutes),
+        VideoId = "aaaaaaaaaaa",
+        Title = title,
+        Artists = [new ArtistRef("Band", "UCband")],
+        Duration = TimeSpan.FromMinutes(4),
+    };
+
+    private static ListeningStatsViewModel Stats(PlayLogContents contents, bool recording = true) =>
+        new(() => Task.FromResult(contents), () => recording, new Clock(), TimeZoneInfo.Utc);
+
+    private static ListeningStatsViewModel Stats(params PlayRecord[] plays) =>
+        Stats(new PlayLogContents(PlayLogState.Readable, plays));
+
+    [Theory]
+    [InlineData(PlayLogState.Readable, ListeningStatsState.NothingYet)]
+    [InlineData(PlayLogState.Newer, ListeningStatsState.Newer)]
+    [InlineData(PlayLogState.Unreadable, ListeningStatsState.Unreadable)]
+    public async Task Without_plays_to_show_the_state_says_why(PlayLogState log, ListeningStatsState shown)
+    {
+        var vm = Stats(new PlayLogContents(log, []));
+
+        await vm.LoadAsync();
+
+        Assert.Equal(shown, vm.State);
+        Assert.False(vm.HasPlays);
+    }
+
+    [Fact]
+    public async Task A_log_that_fails_to_read_shows_as_unreadable()
+    {
+        var vm = new ListeningStatsViewModel(
+            () => Task.FromException<PlayLogContents>(new IOException("locked")), () => true, new Clock(), TimeZoneInfo.Utc);
+
+        await vm.LoadAsync();
+
+        Assert.Equal(ListeningStatsState.Unreadable, vm.State);
+    }
+
+    [Fact]
+    public async Task With_the_log_off_the_page_says_so_and_how_to_turn_it_on()
+    {
+        var vm = Stats(new PlayLogContents(PlayLogState.Readable, []), recording: false);
+
+        await vm.LoadAsync();
+
+        Assert.True(vm.IsRecordingOff);
+        Assert.Contains("Turn it on in Settings", vm.NothingYetHint);
+    }
+
+    [Fact]
+    public async Task The_week_is_compared_with_the_week_before_in_words()
+    {
+        var vm = Stats(
+            Play(Now.AddDays(-1), 90, "This week"),
+            Play(Now.AddDays(-8), 30, "Week before"));
+
+        await vm.LoadAsync();
+
+        Assert.Equal(ListeningStatsState.Ready, vm.State);
+        Assert.Equal("1 h 30 min", vm.ListenedText);
+        Assert.Equal("1 h 0 min more than the 7 days before", vm.ComparisonText);
+        Assert.Equal("1", vm.PlaysText);
+        Assert.Equal("Sat 24 Oct – Fri 30 Oct", vm.RangeText);
+        Assert.Equal(7, vm.Days.Count);
+        Assert.Equal("Thu 29 Oct: 1 h 30 min", vm.Days[5].Name);
+        Assert.Equal(ListeningStatsViewModel.BarAreaHeight, vm.Days[5].Height);
+        Assert.Same(vm.Days[^1], vm.SelectedDay);
+        Assert.Equal(7 * 24, vm.HeatmapCells.Count);
+        Assert.Equal("1. This week, Band, 1 play · 1 h 30 min", vm.TopSongs[0].Name);
+    }
+
+    [Fact]
+    public async Task A_period_with_nothing_in_it_says_so_and_another_period_shows_what_it_has()
+    {
+        var vm = Stats(Play(Now.AddDays(-20), 10));
+
+        await vm.LoadAsync();
+        Assert.True(vm.IsPeriodEmpty);
+        Assert.Equal("Nothing was played in the last 7 days.", vm.SelectedPeriod.EmptyText);
+
+        vm.SelectedPeriod = vm.Periods[1];
+        await vm.LoadAsync();
+
+        Assert.False(vm.IsPeriodEmpty);
+        Assert.Equal(30, vm.Days.Count);
+        Assert.False(vm.IsDense);
+        vm.SelectedPeriod = vm.Periods[2];
+        Assert.True(vm.IsDense);
+        await vm.LoadAsync();
+        Assert.Equal("Fri 31 Oct 2025 – Fri 30 Oct 2026", vm.RangeText);
+    }
+
+    [Theory]
+    [InlineData(0, "0 min")]
+    [InlineData(20, "Under a minute")]
+    [InlineData(59 * 60 + 59, "59 min")]
+    [InlineData(2 * 3600 + 5 * 60, "2 h 5 min")]
+    public void Durations_read_in_hours_and_minutes(int seconds, string text) =>
+        Assert.Equal(text, ListeningStatsViewModel.Duration(TimeSpan.FromSeconds(seconds)));
+
+    [Fact]
+    public void The_heatmap_moves_a_row_with_up_and_down() => Headless.Run(() =>
+    {
+        var list = new ListBox
+        {
+            ItemsSource = Enumerable.Range(0, 7 * 24).Select(i => $"cell {i}").ToList(),
+            ItemsPanel = new FuncTemplate<Panel?>(() => new GridNavigationPanel { Columns = 24 }),
+        };
+        var window = new Window { Width = 800, Height = 400, Content = list };
+        window.Show();
+        window.UpdateLayout();
+
+        list.SelectedIndex = 30;
+        list.ContainerFromIndex(30)!.Focus(NavigationMethod.Directional);
+
+        window.KeyPress(Key.Down, RawInputModifiers.None, PhysicalKey.ArrowDown, null);
+        Assert.Equal(54, list.SelectedIndex);
+        window.KeyPress(Key.Up, RawInputModifiers.None, PhysicalKey.ArrowUp, null);
+        window.KeyPress(Key.Up, RawInputModifiers.None, PhysicalKey.ArrowUp, null);
+        Assert.Equal(6, list.SelectedIndex);
+        window.KeyPress(Key.Up, RawInputModifiers.None, PhysicalKey.ArrowUp, null);
+        Assert.Equal(6, list.SelectedIndex);
+        window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
+        Assert.Equal(7, list.SelectedIndex);
+
+        // The end of a row is the end: Right doesn't wrap into the next day.
+        list.SelectedIndex = 23;
+        list.ContainerFromIndex(23)!.Focus(NavigationMethod.Directional);
+        window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
+        Assert.Equal(23, list.SelectedIndex);
+        window.Close();
+    });
+
+    [Fact]
+    public void The_cells_fill_the_width_exactly() => Headless.Run(() =>
+    {
+        var panel = new GridNavigationPanel { Columns = 24, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top };
+        for (var i = 0; i < 48; i++)
+            panel.Children.Add(new Border { MinWidth = 40, Height = 20 });
+        var window = new Window { Width = 1097, Height = 200, Content = panel };
+        window.Show();
+        window.UpdateLayout();
+
+        Assert.Equal(0, panel.Children[0].Bounds.Left);
+        Assert.Equal(1097, panel.Children[23].Bounds.Right);
+        Assert.Equal(20, panel.Children[24].Bounds.Top);
+        Assert.All(panel.Children, c => Assert.InRange(c.Bounds.Width, 45, 46));
+        window.Close();
+    });
+
+    [Fact]
+    public void Library_keeps_only_its_two_sources()
+    {
+        Assert.Equal([LibrarySource.YouTubeMusic, LibrarySource.ThisComputer], Enum.GetValues<LibrarySource>());
+    }
+
+    private static async Task<ListeningStatsViewModel> BusyWeekAsync()
+    {
+        var vm = Stats(
+            Play(Now.AddDays(-1), 90, "Busy"),
+            Play(Now.AddDays(-3), 0.5, "Short"));
+        await vm.LoadAsync();
+        return vm;
+    }
+
+    private static (Window Window, ListeningStatsView View) Show(ListeningStatsViewModel vm, double width)
+    {
+        ShellResources.Ensure();
+        var view = new ListeningStatsView { DataContext = vm };
+        var window = new Window { Width = width, Height = 900, Content = view };
+        window.Show();
+        window.UpdateLayout();
+        window.UpdateLayout();
+        return (window, view);
+    }
+
+    [Fact]
+    public async Task A_day_with_a_little_listening_still_draws_a_visible_bar()
+    {
+        var vm = await BusyWeekAsync();
+
+        Assert.Equal(ListeningStatsViewModel.MinBarHeight, vm.Days[3].Height);
+        Assert.Equal(0, vm.Days[2].Height);
+        Assert.Equal(ListeningStatsViewModel.BarAreaHeight, vm.Days[5].Height);
+    }
+
+    [Fact]
+    public async Task The_chart_names_its_busiest_day_as_the_scale()
+    {
+        var vm = await BusyWeekAsync();
+
+        Assert.Equal("Busiest day: 1 h 30 min", vm.ScaleText);
+        Headless.Run(() =>
+        {
+            var (window, view) = Show(vm, 1200);
+            Assert.Contains(view.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == vm.ScaleText && t.IsEffectivelyVisible);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public async Task A_week_names_its_weekdays_a_month_every_fifth_day_and_a_year_its_months()
+    {
+        var vm = await BusyWeekAsync();
+        Assert.Equal(["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"], vm.AxisLabels.Select(l => l.Text));
+
+        vm.SelectedPeriod = vm.Periods[1];
+        await vm.LoadAsync();
+        Assert.Equal(30, vm.AxisLabels.Count);
+        Assert.Equal(["5", "10", "15", "20", "25", "30"], vm.AxisLabels.Select(l => l.Text).Where(t => t != ""));
+
+        vm.SelectedPeriod = vm.Periods[2];
+        await vm.LoadAsync();
+        Assert.Equal(365, vm.AxisLabels.Count);
+        var months = vm.AxisLabels.Where(l => l.Text != "").ToList();
+        Assert.Equal(["Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"], months.Select(l => l.Text));
+        Assert.All(months, l => Assert.True(l.Overflows));
+    }
+
+    [Fact]
+    public async Task Bars_are_at_most_48_wide_and_the_labels_are_not_tab_stops()
+    {
+        var vm = await BusyWeekAsync();
+
+        Headless.Run(() =>
+        {
+            var (window, view) = Show(vm, 1200);
+            var bars = view.GetVisualDescendants().OfType<Border>().Where(b => b.Classes.Contains("bar")).ToList();
+            Assert.Equal(7, bars.Count);
+            Assert.All(bars, b => Assert.InRange(b.Bounds.Width, 0, 48));
+            Assert.Contains(bars, b => b.Bounds.Width > 40);
+
+            var labels = view.FindControl<ItemsControl>("DayLabels")!;
+            Assert.False(labels.Focusable);
+            Assert.False(labels.IsTabStop);
+            Assert.Equal(AccessibilityView.Raw, AutomationProperties.GetAccessibilityView(labels));
+            window.Close();
+        });
+    }
+
+    [Theory]
+    [InlineData(1500)]
+    [InlineData(1701)]
+    [InlineData(2400)]
+    public async Task A_years_labels_stay_under_their_bars_at_any_width(double width)
+    {
+        var vm = await BusyWeekAsync();
+        vm.SelectedPeriod = vm.Periods[2];
+        await vm.LoadAsync();
+
+        Headless.Run(() =>
+        {
+            var (window, view) = Show(vm, width);
+            var chart = view.GetVisualDescendants().OfType<ListBox>().First(l => l.Classes.Contains("chart"));
+            var labels = view.FindControl<ItemsControl>("DayLabels")!;
+
+            Assert.Equal(365, vm.AxisLabels.Count);
+            foreach (var day in new[] { 0, 100, 250, 364 })
+            {
+                var bar = chart.ContainerFromIndex(day)!;
+                var label = labels.ContainerFromIndex(day)!;
+                Assert.Equal(bar.TranslatePoint(default, view)!.Value.X, label.TranslatePoint(default, view)!.Value.X);
+            }
+            window.Close();
+        });
+    }
+
+    [Theory]
+    [InlineData(1600, false)]
+    [InlineData(2400, true)]
+    public async Task The_two_charts_sit_side_by_side_only_on_a_wide_pane(double width, bool sideBySide)
+    {
+        var vm = await BusyWeekAsync();
+
+        Headless.Run(() =>
+        {
+            var (window, view) = Show(vm, width);
+            var charts = view.FindControl<StatsChartsPanel>("Charts")!;
+            var perDay = charts.Children[0];
+            var heatmap = charts.Children[1];
+
+            Assert.Equal(sideBySide, charts.IsSideBySide);
+            if (sideBySide)
+            {
+                Assert.Equal(perDay.Bounds.Top, heatmap.Bounds.Top);
+                Assert.Equal(perDay.Bounds.Width, heatmap.Bounds.Width);
+                Assert.Equal(perDay.Bounds.Right + Rambutan.Core.Layout.StatsChartsFit.Gap, heatmap.Bounds.Left);
+                Assert.Equal(charts.Bounds.Width, heatmap.Bounds.Right);
+            }
+            else
+            {
+                Assert.Equal(perDay.Bounds.Bottom, heatmap.Bounds.Top);
+                Assert.Equal(charts.Bounds.Width, perDay.Bounds.Width);
+                Assert.Equal(charts.Bounds.Width, heatmap.Bounds.Width);
+            }
+
+            // The chart comes before the heatmap in the tab order at any width.
+            var lists = view.GetVisualDescendants().OfType<ListBox>().Where(l => l.Classes.Contains("chart")).ToList();
+            Assert.Equal(2, lists.Count);
+            Assert.True(perDay.IsVisualAncestorOf(lists[0]));
+            Assert.True(heatmap.IsVisualAncestorOf(lists[1]));
+            window.Close();
+        });
+    }
+
+    [Theory]
+    [InlineData(1200, 4)]
+    [InlineData(700, 2)]
+    [InlineData(380, 1)]
+    public async Task The_four_summary_tiles_have_equal_widths_and_wrap_on_a_narrow_pane(double width, int columns)
+    {
+        var vm = await BusyWeekAsync();
+
+        Headless.Run(() =>
+        {
+            var (window, view) = Show(vm, width);
+            var tiles = view.FindControl<StatTileGrid>("Tiles")!;
+            Assert.Equal(4, tiles.Children.Count);
+            Assert.Equal(columns, tiles.Columns);
+            Assert.Single(tiles.Children.Select(c => c.Bounds.Width).Distinct());
+            Assert.All(tiles.Children, c => Assert.True(c.Bounds.Width >= 180));
+            window.Close();
+        });
+    }
+}

@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:l="using:Rambutan.App.Localization"
+             xmlns:vm="using:Rambutan.App.ViewModels" xmlns:core="using:Rambutan.Core.Models"
+             xmlns:controls="using:Rambutan.App.Controls" xmlns:touch="using:Rambutan.App.Services"
+             x:Class="Rambutan.App.Views.PhoneSearchPage" x:Name="Root" x:DataType="vm:SearchPageViewModel">
+  <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <TextBox x:Name="SearchBox" PlaceholderText="{l:T phone.query}" Text="{Binding Query}"
+               touch:PhoneInput.Type="Search" KeyDown="OnSearchKeyDown" AutomationProperties.Name="{l:T phone.searchMusic}" />
+      <Button Grid.Column="1" Command="{Binding SearchCommand}" AutomationProperties.Name="{l:T phone.search}">
+        <PathIcon Data="{StaticResource Icon.Search}" Width="22" Height="22" />
+      </Button>
+    </Grid>
+    <ComboBox Grid.Row="1" ItemsSource="{Binding Tabs}" SelectedItem="{Binding SelectedTab}" HorizontalAlignment="Stretch" AutomationProperties.Name="{l:T phone.resultType}">
+      <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:SearchTab"><TextBlock Text="{Binding Converter={x:Static vm:Converters.SearchTabName}}" /></DataTemplate></ComboBox.ItemTemplate>
+    </ComboBox>
+    <ProgressBar Grid.Row="2" IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+    <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="12">
+        <TextBlock Text="{l:T phone.searchHint}" TextWrapping="Wrap" Margin="4,16" IsVisible="{Binding !HasSearched}" />
+        <ContentControl Content="{Binding LoadError}" ContentTemplate="{StaticResource ErrorState.Compact}" />
+        <Button Content="{l:T phone.openTopResult}" Command="{Binding OpenCommand}" CommandParameter="{Binding TopResult.Entry}"
+                IsVisible="{Binding TopResult, Converter={x:Static ObjectConverters.IsNotNull}}" HorizontalAlignment="Stretch" />
+        <ItemsControl ItemsSource="{Binding Results}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="core:CatalogEntry">
+              <Button Margin="0,3" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                      Background="#202027" Padding="8" Command="{Binding #Root.((vm:SearchPageViewModel)DataContext).OpenCommand}" CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="52,*" ColumnSpacing="12">
+                  <controls:RemoteImage Url="{Binding ThumbnailUrl}" Width="52" Height="52" DecodeWidth="160" Stretch="UniformToFill" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                    <TextBlock Text="{Binding Title}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Subtitle}" FontSize="14" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Button Content="{l:T phone.moreResults}" Command="{Binding LoadMoreCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Stretch" />
+        <ContentControl Content="{Binding MoreError}" ContentTemplate="{StaticResource ErrorState.Compact}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "Tmds.DBus.Protocol": {
+        "type": "Transitive",
+        "resolved": "0.94.1",
+        "contentHash": "11YMr7FnAbL83bQmVxlhbIKHvSLxjO81D12Ej0QMSGXMDTxNA9MTOa4MQxx43nv5el/efuPHwzyrj6a5ha2gug=="
+      },
+      "Velopack": {
+        "type": "Transitive",
+        "resolved": "1.2.161",
+        "contentHash": "OpHNacIumnkhaaX3ZlQ/TCR4YPOJvud2/PAOoWb6o+mIrLwIVA275I5wAgt4q/1O2VrJeDwR1qFQyqzG4lUArg=="
+      },
+      "rambutan.core": {
+        "type": "Project"
+      },
+      "rambutan.innertube": {
+        "type": "Project",
+        "dependencies": {
+          "Rambutan.Core": "[0.1.0-beta.11, )"
+        }
+      },
+      "rambutan.integrations": {
+        "type": "Project",
+        "dependencies": {
+          "Rambutan.Core": "[0.1.0-beta.11, )",
+          "Tmds.DBus.Protocol": "[0.94.1, )",
+          "Velopack": "[1.2.161, )"
+        }
+      }
+    },
+    "net10.0/linux-arm64": {},
+    "net10.0/linux-x64": {}
+  }
+}

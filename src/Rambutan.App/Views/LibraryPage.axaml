@@ -1,0 +1,849 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Rambutan.App.Localization"
+             xmlns:vm="using:Rambutan.App.ViewModels"
+             xmlns:controls="using:Rambutan.App.Controls"
+             xmlns:views="using:Rambutan.App.Views"
+             xmlns:core="using:Rambutan.Core.Models"
+             xmlns:local="using:Rambutan.Core.Local"
+             xmlns:conv="using:Rambutan.App.Converters"
+             x:Class="Rambutan.App.Views.LibraryPage"
+             x:Name="Root"
+             x:DataType="vm:LibraryPageViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <controls:ActionRow Grid.Row="0" Spacing="10" Margin="4,0,16,8" MoreClasses="icon subtle">
+      <TextBlock controls:ActionRow.Keep="True" Text="{l:T library.title}" FontSize="{StaticResource Token.Font.Page}" FontWeight="ExtraBold" VerticalAlignment="Center" />
+      <!-- The two sources, in view; shown signed out too, so the files stay reachable. -->
+      <ListBox Classes="segmented" controls:ActionRow.Keep="True" VerticalAlignment="Center" HorizontalAlignment="Left"
+               ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}"
+               SelectionMode="AlwaysSelected"
+               IsVisible="{Binding HasSources}"
+               AutomationProperties.Name="{l:T library.source.name}">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:LibrarySource">
+            <TextBlock Text="{Binding Converter={x:Static vm:Converters.LibrarySourceName}}" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <Button Classes="icon subtle" ToolTip.Tip="{l:T common.refresh}"
+              AutomationProperties.Name="{l:T common.refresh}" Command="{Binding SelectedSection.RefreshCommand}">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="IsYouTubeMusic" />
+            <Binding Path="!SelectedSection.NeedsSignIn" />
+          </MultiBinding>
+        </Button.IsVisible>
+        <PathIcon Data="{StaticResource Icon.Refresh}" Width="18" Height="18" />
+      </Button>
+      <Button VerticalAlignment="Center"
+              AutomationProperties.Name="{l:T library.newPlaylist}"
+              Command="{Binding NewPlaylistCommand}">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="IsYouTubeMusic" />
+            <Binding Path="IsPlaylists" />
+            <Binding Path="!SelectedSection.NeedsSignIn" />
+          </MultiBinding>
+        </Button.IsVisible>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Data="{StaticResource Icon.Add}" Width="14" Height="14" VerticalAlignment="Center" />
+          <TextBlock Text="{l:T library.newPlaylist}" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <!-- Always in the More menu: a rare action, not one of the row's buttons. -->
+      <Button VerticalAlignment="Center" Command="{Binding ImportFromSpotifyCommand}"
+              controls:ActionRow.InMenu="True"
+              IsVisible="{Binding ShowsSpotifyImport}"
+              AutomationProperties.Name="{l:T library.importSpotify}">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <PathIcon Data="{StaticResource Icon.AddToPlaylist}" Width="14" Height="14" VerticalAlignment="Center" />
+          <TextBlock Text="{l:T library.importSpotify}" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsYouTubeMusic}">
+        <ProgressBar IsIndeterminate="True" Width="80" AutomationProperties.Name="{l:T common.loading}" IsVisible="{Binding SelectedSection.IsLoading}" />
+        <!-- Offline, the albums and playlists tabs list the downloaded ones;
+             the refresh button beside the title is the retry. -->
+        <TextBlock Classes="headermeta" Text="{Binding SelectedSection.OfflineNotice}" VerticalAlignment="Center"
+                   IsVisible="{Binding SelectedSection.IsOfflineCopy}" AutomationProperties.LiveSetting="Polite" />
+        <ContentControl Content="{Binding SelectedSection.LoadError}"
+                        ContentTemplate="{StaticResource ErrorState.Compact}"
+                        VerticalAlignment="Center" Margin="6,0,0,0"
+                        IsVisible="{Binding !!SelectedSection.Items.Count}" />
+      </StackPanel>
+      <!-- On this computer: rescan, and where the scan is. -->
+      <Button Classes="icon subtle" ToolTip.Tip="{l:T settings.local.rescan}"
+              AutomationProperties.Name="{l:T settings.local.rescan}"
+              Command="{Binding Local.RescanCommand}">
+        <Button.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="IsThisComputer" />
+            <Binding Path="Local.HasFolders" />
+            <Binding Path="Local.ListsFiles" />
+          </MultiBinding>
+        </Button.IsVisible>
+        <PathIcon Data="{StaticResource Icon.Refresh}" Width="18" Height="18" />
+      </Button>
+      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsThisComputer}">
+        <ProgressBar IsIndeterminate="True" Width="80" AutomationProperties.Name="{Binding Local.Status}">
+          <ProgressBar.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="Local.IsScanning" />
+              <Binding Path="Local.ListsFiles" />
+            </MultiBinding>
+          </ProgressBar.IsVisible>
+        </ProgressBar>
+        <TextBlock Classes="headermeta" Text="{Binding Local.Status}" VerticalAlignment="Center"
+                   IsVisible="{Binding Local.Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   AutomationProperties.LiveSetting="Polite" />
+        <TextBlock Classes="headermeta" Text="{Binding Local.Problems}" VerticalAlignment="Center"
+                   Foreground="{StaticResource Token.Brush.Text.Muted}"
+                   IsVisible="{Binding Local.Problems, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
+    </controls:ActionRow>
+
+    <!-- One tab per kind of thing the library keeps, as Search has one per filter. -->
+    <controls:ChipList Grid.Row="1" Classes="chips" Margin="4,0,16,12"
+                       AutomationProperties.Name="{l:T library.sectionsName}"
+                       ItemsSource="{Binding Sections}"
+                       SelectedItem="{Binding SelectedSection}"
+                       SelectionMode="AlwaysSelected"
+                       Background="Transparent">
+      <controls:ChipList.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="IsYouTubeMusic" />
+          <Binding Path="!SelectedSection.NeedsSignIn" />
+        </MultiBinding>
+      </controls:ChipList.IsVisible>
+      <controls:ChipList.ItemTemplate>
+        <DataTemplate x:DataType="vm:LibrarySection">
+          <TextBlock Text="{Binding Kind, Converter={x:Static vm:Converters.LibrarySectionName}}" />
+        </DataTemplate>
+      </controls:ChipList.ItemTemplate>
+      <controls:ChipList.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal" Spacing="8" />
+        </ItemsPanelTemplate>
+      </controls:ChipList.ItemsPanel>
+    </controls:ChipList>
+
+    <Panel Grid.Row="2" DataContext="{Binding SelectedSection}" x:DataType="vm:LibrarySection"
+           IsVisible="{Binding #Root.((vm:LibraryPageViewModel)DataContext).IsYouTubeMusic}">
+      <StackPanel Margin="0,0,12,0" Classes="empty" IsVisible="{Binding NeedsSignIn}">
+        <PathIcon Data="{StaticResource Icon.Person}" />
+        <TextBlock Classes="title" Text="{l:T library.signInTitle}" />
+        <TextBlock Classes="hint"
+                   Text="{l:T library.signInHint}" />
+        <!-- The action is here, not "in the sidebar". -->
+        <Button Classes="accent" Content="{l:T common.signIn}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Session.SignInCommand}" />
+      </StackPanel>
+
+      <!-- Placeholders shaped like what is coming: rows for songs, cards for the rest. -->
+      <Panel Margin="0,0,12,0">
+        <Panel.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="IsLoading" />
+            <Binding Path="!Items.Count" />
+            <Binding Path="!NeedsSignIn" />
+          </MultiBinding>
+        </Panel.IsVisible>
+        <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="8" Margin="4,0"
+                   IsVisible="{Binding !ShowsRows}">
+          <Border Classes="skeleton" Width="176" Height="262" CornerRadius="12" />
+          <Border Classes="skeleton" Width="176" Height="262" CornerRadius="12" />
+          <Border Classes="skeleton" Width="176" Height="262" CornerRadius="12" />
+          <Border Classes="skeleton" Width="176" Height="262" CornerRadius="12" />
+          <Border Classes="skeleton" Width="176" Height="262" CornerRadius="12" />
+          <Border Classes="skeleton" Width="176" Height="262" CornerRadius="12" />
+        </WrapPanel>
+        <StackPanel Spacing="8" Margin="4,0" IsVisible="{Binding ShowsRows}">
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+        </StackPanel>
+      </Panel>
+
+      <StackPanel Margin="0,0,12,0" Classes="empty">
+        <StackPanel.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="!NeedsSignIn" />
+            <Binding Path="!IsLoading" />
+            <Binding Path="!Items.Count" />
+            <Binding Path="LoadError" Converter="{x:Static ObjectConverters.IsNull}" />
+          </MultiBinding>
+        </StackPanel.IsVisible>
+        <PathIcon Data="{StaticResource Icon.Library}" />
+        <TextBlock Classes="title" Text="{Binding Kind, Converter={x:Static vm:Converters.LibraryEmptyTitle}}" />
+        <TextBlock Classes="hint" Text="{Binding Kind, Converter={x:Static vm:Converters.LibraryEmptyHint}}" />
+      </StackPanel>
+
+      <!-- The card tabs. Scrolling near the end loads the next page, as playlists
+           do (code-behind). Songs and History scroll in their own lists below, so
+           this scroller has no section (and keeps no position) on theirs. -->
+      <ScrollViewer x:Name="Scroller" Classes="pagescroll"
+                    DataContext="{Binding #Root.((vm:LibraryPageViewModel)DataContext).CardSection}"
+                    controls:ScrollMemory.IsEnabled="True">
+        <ScrollViewer.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).CardSection" Converter="{x:Static ObjectConverters.IsNotNull}" />
+            <Binding Path="!NeedsSignIn" FallbackValue="False" />
+          </MultiBinding>
+        </ScrollViewer.IsVisible>
+        <ItemsControl ItemsSource="{Binding Items}" Margin="4,0"
+                      controls:CollectionMenu.InLibrary="{Binding !IsOfflineCopy}"
+                      AutomationProperties.Name="{Binding Kind, Converter={x:Static vm:Converters.LibrarySectionName}}"
+                      controls:RovingFocus.IsEnabled="True">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="core:CatalogEntry">
+              <views:EntryCard OpenCommand="{Binding #Root.((vm:LibraryPageViewModel)DataContext).OpenEntryCommand}"
+                               PlayCommand="{Binding #Root.((vm:LibraryPageViewModel)DataContext).PlayEntryCommand}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+
+      <!-- Songs are track rows, as in a filtered search, in a list that scrolls
+           itself, as a playlist's does, so only the rows in view are built
+           (and the next page loads near its end, code-behind). Its own section
+           is its context, so its scroll position is that tab's alone. A song
+           plays with the loaded rows as its queue. Padding: pagescroll's 12
+           clear of the bar, and the 4 the cards keep at each side. -->
+      <ListBox x:Name="SongList" Classes="tracks pagescroll" Background="Transparent" Padding="4,0,16,0"
+               DataContext="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Songs}"
+               ItemsSource="{Binding Items}"
+               AutomationProperties.Name="{Binding Kind, Converter={x:Static vm:Converters.LibrarySectionName}}"
+               controls:ScrollMemory.IsEnabled="True"
+               controls:ItemActivation.Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).PlaySongCommand}"
+               controls:TrackColumns.HasAlbum="True"
+               controls:TrackColumns.HasLiked="True"
+               controls:TrackColumns.ItemInset="16"
+               controls:TrackColumns.FixedWidth="234">
+        <!-- Columns at fixed positions (Controls/TrackColumns). FixedWidth: cover
+             52, playing marker 14, actions 112, duration 56; ItemInset the
+             item's padding. -->
+        <ListBox.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).IsSongs" />
+            <Binding Path="!NeedsSignIn" />
+          </MultiBinding>
+        </ListBox.IsVisible>
+        <!-- Typed, not the ItemTemplate: the tab's items are catalog entries,
+             and only a song has a row. -->
+        <ListBox.DataTemplates>
+            <DataTemplate DataType="{x:Type core:SongEntry}">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto" Margin="0,2"
+                    Background="Transparent" HorizontalAlignment="Left"
+                    Width="{Binding $parent[ListBox].(controls:TrackColumns.RowWidth)}"
+                    controls:TrackMenu.Track="{Binding Track}">
+                <Border Classes="rowart">
+                  <controls:RemoteImage Url="{Binding ThumbnailUrl}" Stretch="UniformToFill" DecodeWidth="96" />
+                </Border>
+                <!-- Playing marker; the slot is always present, so titles line up. -->
+                <Panel Grid.Column="1" Width="14">
+                  <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12"
+                            VerticalAlignment="Center"
+                            Foreground="{StaticResource Token.Brush.Accent}">
+                    <PathIcon.IsVisible>
+                      <MultiBinding Converter="{x:Static conv:IsPlayingTrackConverter.Instance}">
+                        <Binding Path="Track.Identity" />
+                        <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Player.NowPlaying.Identity" />
+                      </MultiBinding>
+                    </PathIcon.IsVisible>
+                  </PathIcon>
+                </Panel>
+                <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
+                  <TextBlock Classes="rowtitle" Text="{Binding Title}" />
+                  <DockPanel>
+                    <PathIcon DockPanel.Dock="Left" Classes="downloadmark">
+                      <PathIcon.IsVisible>
+                        <MultiBinding Converter="{x:Static conv:IsDownloadedConverter.Instance}">
+                          <Binding Path="Track.VideoId" />
+                          <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Actions.DownloadedIds" />
+                        </MultiBinding>
+                      </PathIcon.IsVisible>
+                    </PathIcon>
+                    <TextBlock Classes="rowmeta" Text="{Binding Subtitle}"
+                               IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </DockPanel>
+                </StackPanel>
+                <!-- The album while the list has room for it (Controls/TrackColumns).
+                     Not a tab stop: one per row would crowd the Tab order, and the
+                     track menu has Go to album. -->
+                <Panel Grid.Column="3" Classes="rowalbum"
+                       Width="{Binding $parent[ListBox].(controls:TrackColumns.AlbumWidth)}">
+                  <Panel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                      <Binding Path="$parent[ListBox].(controls:TrackColumns.ShowsAlbum)" />
+                      <Binding Path="Track.Album" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                    </MultiBinding>
+                  </Panel.IsVisible>
+                  <Button Classes="textlink rowlink" IsTabStop="False"
+                          IsVisible="{Binding Track.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          ToolTip.Tip="{l:T common.goToAlbum}"
+                          Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToAlbumCommand}"
+                          CommandParameter="{Binding Track}">
+                    <TextBlock Text="{Binding Track.Album}" />
+                  </Button>
+                  <TextBlock Classes="rowmeta" Text="{Binding Track.Album}"
+                             IsVisible="{Binding Track.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNull}}" />
+                </Panel>
+                <!-- Visual only: the Like button in the actions says the state. -->
+                <Panel Grid.Column="4" Width="24"
+                       IsVisible="{Binding $parent[ListBox].(controls:TrackColumns.ShowsLiked)}">
+                  <controls:LikedMark Classes="likedmark" Track="{Binding Track}" />
+                </Panel>
+                <TextBlock Grid.Column="6" Classes="rowmeta" Text="{Binding Track.Duration, Converter={x:Static conv:DurationFormat.Converter}}"
+                           MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0" />
+                <!-- Fixed width and before the duration, as on Search's rows. -->
+                <Panel Grid.Column="5" Width="112">
+                  <StackPanel Classes="rowactions" Orientation="Horizontal"
+                              HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.play}"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).PlaySongCommand}"
+                            CommandParameter="{Binding}">
+                      <PathIcon Data="{StaticResource Icon.Play}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToQueue}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToQueueCommand}"
+                            CommandParameter="{Binding Track}">
+                      <PathIcon Data="{StaticResource Icon.Add}" Width="16" Height="16" />
+                    </Button>
+                    <controls:RateButton Classes="icon subtle small" IconSize="16" Kind="Like"
+                                         Track="{Binding Track}"
+                                         Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.LikeCommand}"
+                                         CommandParameter="{Binding Track}" />
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToPlaylist}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToPlaylistCommand}"
+                            CommandParameter="{Binding Track}">
+                      <PathIcon Data="{StaticResource Icon.AddToPlaylist}" Width="16" Height="16" />
+                    </Button>
+                  </StackPanel>
+                </Panel>
+              </Grid>
+            </DataTemplate>
+        </ListBox.DataTemplates>
+      </ListBox>
+
+      <!-- History: YouTube Music's own headings and their rows in one list that
+           scrolls itself (LibrarySection.HistoryRows), so only the rows in view
+           are built and a heading scrolls with its rows. A heading is no row:
+           code-behind keeps it from being selected, focused or played, and
+           names it as a heading. A song plays with the whole history as its
+           queue; the menu's last group removes it from the history. The note
+           stays above the list. -->
+      <DockPanel DataContext="{Binding #Root.((vm:LibraryPageViewModel)DataContext).History}">
+        <DockPanel.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).IsHistory" />
+            <Binding Path="!NeedsSignIn" />
+          </MultiBinding>
+        </DockPanel.IsVisible>
+        <TextBlock DockPanel.Dock="Top" Classes="rowmeta" Text="{l:T library.history.note}" TextWrapping="Wrap"
+                   Margin="4,0,16,0" IsVisible="{Binding !!Items.Count}" />
+        <ListBox x:Name="HistoryList" Classes="tracks pagescroll" Background="Transparent" Padding="4,0,16,0"
+                 ItemsSource="{Binding HistoryRows}"
+                 AutomationProperties.Name="{Binding Kind, Converter={x:Static vm:Converters.LibrarySectionName}}"
+                 controls:ScrollMemory.IsEnabled="True"
+                 controls:ItemActivation.Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).PlayHistoryEntryCommand}"
+                 controls:TrackColumns.FixedWidth="266">
+          <!-- Padding and FixedWidth: as the Songs tab's list. -->
+          <ListBox.DataTemplates>
+            <!-- The item's padding is the rows'; the heading goes back to the
+                 list's edge, and its top margin is the gap between groups. -->
+            <DataTemplate DataType="{x:Type vm:HistoryHeading}">
+              <TextBlock Classes="sectiontitle" Text="{Binding Played}" Margin="-8,12,0,2" />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type core:HistoryEntry}">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0,2"
+                    Background="Transparent"
+                    controls:TrackMenu.Track="{Binding Track}"
+                    controls:TrackMenu.Host="{Binding #Root.((vm:LibraryPageViewModel)DataContext)}">
+                <Border Classes="rowart">
+                  <controls:RemoteImage Url="{Binding ThumbnailUrl}" Stretch="UniformToFill" DecodeWidth="96" />
+                </Border>
+                <Panel Grid.Column="1" Width="14">
+                  <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12"
+                            VerticalAlignment="Center"
+                            Foreground="{StaticResource Token.Brush.Accent}">
+                    <PathIcon.IsVisible>
+                      <MultiBinding Converter="{x:Static conv:IsPlayingTrackConverter.Instance}">
+                        <Binding Path="Track.Identity" />
+                        <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Player.NowPlaying.Identity" />
+                      </MultiBinding>
+                    </PathIcon.IsVisible>
+                  </PathIcon>
+                </Panel>
+                <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
+                  <TextBlock Classes="rowtitle" Text="{Binding Title}" />
+                  <DockPanel>
+                    <PathIcon DockPanel.Dock="Left" Classes="downloadmark">
+                      <PathIcon.IsVisible>
+                        <MultiBinding Converter="{x:Static conv:IsDownloadedConverter.Instance}">
+                          <Binding Path="Track.VideoId" />
+                          <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Actions.DownloadedIds" />
+                        </MultiBinding>
+                      </PathIcon.IsVisible>
+                    </PathIcon>
+                    <TextBlock Classes="rowmeta" Text="{Binding Subtitle}"
+                               IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                  </DockPanel>
+                </StackPanel>
+                <!-- The album while the list has room for it (Controls/TrackColumns).
+                     Not a tab stop: one per row would crowd the Tab order,
+                     and the track menu has Go to album. -->
+                <Panel Grid.Column="3" Classes="rowalbum"
+                       Width="{Binding $parent[ListBox].(controls:TrackColumns.AlbumWidth)}">
+                  <Panel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                      <Binding Path="$parent[ListBox].(controls:TrackColumns.ShowsAlbum)" />
+                      <Binding Path="Track.Album" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                    </MultiBinding>
+                  </Panel.IsVisible>
+                  <Button Classes="textlink rowlink" IsTabStop="False"
+                          IsVisible="{Binding Track.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          ToolTip.Tip="{l:T common.goToAlbum}"
+                          Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToAlbumCommand}"
+                          CommandParameter="{Binding Track}">
+                    <TextBlock Text="{Binding Track.Album}" />
+                  </Button>
+                  <TextBlock Classes="rowmeta" Text="{Binding Track.Album}"
+                             IsVisible="{Binding Track.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNull}}" />
+                </Panel>
+                <TextBlock Grid.Column="5" Classes="rowmeta" Text="{Binding Track.Duration, Converter={x:Static conv:DurationFormat.Converter}}"
+                           MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0" />
+                <Panel Grid.Column="4" Width="112">
+                  <StackPanel Classes="rowactions" Orientation="Horizontal"
+                              HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.play}"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).PlayHistoryEntryCommand}"
+                            CommandParameter="{Binding}">
+                      <PathIcon Data="{StaticResource Icon.Play}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToQueue}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToQueueCommand}"
+                            CommandParameter="{Binding Track}">
+                      <PathIcon Data="{StaticResource Icon.Add}" Width="16" Height="16" />
+                    </Button>
+                    <controls:RateButton Classes="icon subtle small" IconSize="16" Kind="Like"
+                                         Track="{Binding Track}"
+                                         Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.LikeCommand}"
+                                         CommandParameter="{Binding Track}" />
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToPlaylist}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToPlaylistCommand}"
+                            CommandParameter="{Binding Track}">
+                      <PathIcon Data="{StaticResource Icon.AddToPlaylist}" Width="16" Height="16" />
+                    </Button>
+                  </StackPanel>
+                </Panel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.DataTemplates>
+        </ListBox>
+      </DockPanel>
+
+      <!-- Load failed with nothing to show: the failure takes the page. Declared last so it sits above the
+           (empty, but hit-testable) list in the same cell, which would otherwise
+           swallow clicks on Try again and Details. -->
+      <ContentControl Margin="0,0,12,0" Content="{Binding LoadError}"
+                      ContentTemplate="{StaticResource ErrorState.Full}"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      IsVisible="{Binding !Items.Count}" />
+    </Panel>
+
+    <!-- On this computer. Its own list with its own scroller, so a library of
+         thousands of files is virtualized. -->
+    <DockPanel Grid.Row="1" Grid.RowSpan="3"
+               IsVisible="{Binding #Root.((vm:LibraryPageViewModel)DataContext).IsThisComputer}"
+               DataContext="{Binding Local}" x:DataType="vm:LocalLibraryViewModel">
+      <controls:ChipList DockPanel.Dock="Top" Classes="chips" Margin="4,0,16,12"
+                         AutomationProperties.Name="{l:T library.local.filterName}"
+                         ItemsSource="{Binding Filters}"
+                         SelectedItem="{Binding Filter}"
+                         SelectionMode="AlwaysSelected"
+                         Background="Transparent"
+                         IsVisible="{Binding ShowsFilters}">
+        <controls:ChipList.ItemTemplate>
+          <DataTemplate x:DataType="local:LocalSource">
+            <TextBlock Text="{Binding Converter={x:Static vm:Converters.LocalSourceName}}" />
+          </DataTemplate>
+        </controls:ChipList.ItemTemplate>
+        <controls:ChipList.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="8" />
+          </ItemsPanelTemplate>
+        </controls:ChipList.ItemsPanel>
+      </controls:ChipList>
+
+      <!-- Downloading: on top under every filter, only while jobs exist, in its
+           own short scroller so a long playlist doesn't push the list away. -->
+      <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="4,0,16,16"
+                  DataContext="{Binding Downloads}" x:DataType="vm:DownloadsViewModel"
+                  IsVisible="{Binding HasJobs, FallbackValue=False}">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock Classes="sectiontitle" Text="{l:T downloads.active}" VerticalAlignment="Center" />
+          <TextBlock Classes="rowmeta" Text="{Binding JobsSummary}" VerticalAlignment="Center" />
+          <Button Content="{l:T downloads.retryAll}" Command="{Binding RetryAllCommand}"
+                  IsVisible="{Binding HasFailed}" FontSize="12" VerticalAlignment="Center" />
+          <Button Content="{l:T downloads.cancelAll}" Command="{Binding CancelAllCommand}"
+                  FontSize="12" VerticalAlignment="Center" />
+        </StackPanel>
+        <!-- Three and a half rows: the half row says the list scrolls. -->
+        <ScrollViewer MaxHeight="182">
+          <!-- Indented as the track list's items are by their padding. -->
+          <ItemsControl ItemsSource="{Binding Jobs}" Margin="8,0" AutomationProperties.Name="{l:T downloads.activeListName}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:DownloadJobRow">
+                <Grid ColumnDefinitions="Auto,*,200,Auto" Margin="0,2" Height="48">
+                  <Border Classes="rowart">
+                    <controls:RemoteImage Url="{Binding Track.ThumbnailUrl}" Stretch="UniformToFill" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                    <TextBlock Classes="rowtitle" Text="{Binding Track.Title}" />
+                    <TextBlock Classes="rowmeta" Text="{Binding Track.ArtistDisplay}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" Margin="12,0">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <PathIcon Data="{StaticResource Icon.Warning}" Width="14" Height="14"
+                                Foreground="{StaticResource Token.Brush.Error}" IsVisible="{Binding IsFailed}" />
+                      <TextBlock Classes="rowmeta" Text="{Binding Status}" ToolTip.Tip="{Binding Error}" />
+                    </StackPanel>
+                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="4" MinHeight="4"
+                                 IsIndeterminate="{Binding !HasProgress}"
+                                 AutomationProperties.Name="{Binding Track.Title}">
+                      <ProgressBar.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                          <Binding Path="!IsFailed" />
+                          <Binding Path="!IsWaiting" />
+                        </MultiBinding>
+                      </ProgressBar.IsVisible>
+                    </ProgressBar>
+                  </StackPanel>
+                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <Button Classes="icon subtle small" IsVisible="{Binding IsFailed}"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.RetryCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="{l:T downloads.retry}" AutomationProperties.Name="{l:T downloads.retry}">
+                      <PathIcon Data="{StaticResource Icon.Refresh}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.CancelCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="{l:T downloads.cancel}" AutomationProperties.Name="{l:T downloads.cancel}">
+                      <PathIcon Data="{StaticResource Icon.Close}" Width="16" Height="16" />
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </StackPanel>
+
+      <!-- The Downloads filter: Play all and Export, or an export's progress in
+           Export's place. The space used is the status line above. -->
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="4,0,16,12"
+                  DataContext="{Binding Downloads}" x:DataType="vm:DownloadsViewModel">
+        <StackPanel.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).Local.IsDownloadsFilter" />
+            <Binding Path="HasDownloaded" FallbackValue="False" />
+          </MultiBinding>
+        </StackPanel.IsVisible>
+        <Button Classes="cardplay" VerticalAlignment="Center"
+                Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.PlayAllCommand}"
+                ToolTip.Tip="{l:T common.playAll}" AutomationProperties.Name="{l:T common.playAll}">
+          <PathIcon Data="{StaticResource Icon.Play}" Width="18" Height="18" />
+        </Button>
+        <Button Content="{l:T downloads.export}" Command="{Binding ExportAllCommand}" IsEnabled="{Binding CanExport}"
+                VerticalAlignment="Center" AutomationProperties.Name="{l:T downloads.export}">
+          <Button.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="ExportEnabled" />
+              <Binding Path="!IsExporting" />
+            </MultiBinding>
+          </Button.IsVisible>
+        </Button>
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" IsVisible="{Binding IsExporting}">
+          <TextBlock Classes="rowmeta" Text="{Binding ExportStatus}" VerticalAlignment="Center"
+                     AutomationProperties.LiveSetting="Polite" />
+          <Button Content="{l:T downloads.export.cancel}" Command="{Binding CancelExportCommand}"
+                  VerticalAlignment="Center" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- The Playlists filter: New playlist, as the YouTube Music side has,
+           and Import, which reads every file's tags (the bar shows it). -->
+      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="4,0,16,12">
+        <StackPanel.IsVisible>
+          <MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="IsPlaylistsFilter" />
+            <Binding Path="CanCreatePlaylist" />
+          </MultiBinding>
+        </StackPanel.IsVisible>
+        <Button Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).NewLocalPlaylistCommand}"
+                AutomationProperties.Name="{l:T library.newPlaylist}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Data="{StaticResource Icon.Add}" Width="16" Height="16" />
+            <TextBlock Text="{l:T library.newPlaylist}" />
+          </StackPanel>
+        </Button>
+        <Button Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).ImportLocalPlaylistCommand}"
+                AutomationProperties.Name="{l:T library.local.importPlaylist}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <PathIcon Data="{StaticResource Icon.AddToPlaylist}" Width="16" Height="16" />
+            <TextBlock Text="{l:T library.local.importPlaylist}" />
+          </StackPanel>
+        </Button>
+        <ProgressBar IsIndeterminate="True" Width="80" VerticalAlignment="Center"
+                     AutomationProperties.Name="{l:T common.loading}"
+                     IsVisible="{Binding #Root.((vm:LibraryPageViewModel)DataContext).IsImportingPlaylist}" />
+      </StackPanel>
+
+      <Panel>
+        <StackPanel Margin="0,0,12,0" Classes="empty" IsVisible="{Binding NoPlaylists}">
+          <PathIcon Data="{StaticResource Icon.Queue}" />
+          <TextBlock Classes="title" Text="{l:T library.local.noPlaylistsTitle}" />
+          <TextBlock Classes="hint" Text="{l:T library.local.noPlaylistsHint}" />
+        </StackPanel>
+
+        <ListBox Classes="tracks" Background="Transparent" Margin="4,0,12,0"
+                 ItemsSource="{Binding Playlists}"
+                 IsVisible="{Binding !!Playlists.Count}"
+                 AutomationProperties.Name="{l:T library.local.playlistsName}"
+                 controls:ItemActivation.Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).OpenLocalPlaylistCommand}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:LocalPlaylistRow">
+              <Grid ColumnDefinitions="Auto,*" Margin="0,2" Background="Transparent">
+                <Border Classes="rowart">
+                  <Panel>
+                    <PathIcon Data="{StaticResource Icon.Queue}" Width="16" Height="16" Opacity="0.35" />
+                    <controls:RemoteImage Url="{Binding Cover, Converter={x:Static conv:ArtworkConverter.Instance}}"
+                                          Stretch="UniformToFill" DecodeWidth="96" />
+                  </Panel>
+                </Border>
+                <StackPanel Grid.Column="1" Classes="rowtext" Spacing="1" VerticalAlignment="Center" Margin="14,0,0,0">
+                  <TextBlock Classes="rowtitle" Text="{Binding Name}" />
+                  <TextBlock Classes="rowmeta" Text="{Binding Summary}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Margin="0,0,12,0" Classes="empty" IsVisible="{Binding NeedsFolders}">
+          <PathIcon Data="{StaticResource Icon.MusicNote}" />
+          <TextBlock Classes="title" Text="{l:T library.local.noFoldersTitle}" />
+          <TextBlock Classes="hint" Text="{l:T library.local.noFoldersHint}" />
+          <Button Classes="accent" Content="{l:T library.local.openSettings}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                  Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).OpenSettingsCommand}" />
+        </StackPanel>
+
+        <StackPanel Margin="0,0,12,0" Classes="empty" IsVisible="{Binding IsEmpty}">
+          <PathIcon Data="{StaticResource Icon.MusicNote}" />
+          <TextBlock Classes="title" Text="{l:T library.local.emptyTitle}" />
+          <TextBlock Classes="hint" Text="{l:T library.local.emptyHint}" />
+          <Button Content="{l:T library.local.openSettings}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                  Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).OpenSettingsCommand}" />
+        </StackPanel>
+
+        <StackPanel Margin="0,0,12,0" Classes="empty" IsVisible="{Binding NoDownloads}">
+          <PathIcon Data="{StaticResource Icon.Download}" />
+          <TextBlock Classes="title" Text="{l:T downloads.emptyTitle}" />
+          <TextBlock Classes="hint" Text="{l:T downloads.emptyHint}" />
+        </StackPanel>
+
+        <!-- A first scan before any file is read: rows shaped like what is coming. -->
+        <StackPanel Spacing="8" Margin="4,0,16,0">
+          <StackPanel.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="IsScanning" />
+              <Binding Path="!Tracks.Count" />
+              <Binding Path="ListsFiles" />
+            </MultiBinding>
+          </StackPanel.IsVisible>
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+          <Border Classes="skeleton" Height="48" CornerRadius="8" />
+        </StackPanel>
+
+        <ListBox Classes="tracks" Background="Transparent" Margin="4,0,12,0"
+                 ItemsSource="{Binding Tracks}"
+                 IsVisible="{Binding !!Tracks.Count}"
+                 AutomationProperties.Name="{l:T library.local.listName}"
+                 controls:ItemActivation.Command="{Binding PlayCommand}"
+                 controls:TrackColumns.FixedWidth="318">
+          <!-- FixedWidth: item padding 16, cover 52, playing marker 14, album
+               gap 16, actions 112, duration 56, and 52 for the size the
+               Downloads filter puts before the duration (or the missing note
+               in its place), so that filter's titles keep their room too. -->
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:LocalTrackRow">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0,2"
+                    Background="Transparent"
+                    Classes.missing="{Binding IsMissing}"
+                    controls:TrackMenu.Track="{Binding Track}">
+                <Border Classes="rowart">
+                  <Panel>
+                    <PathIcon Data="{StaticResource Icon.MusicNote}" Width="16" Height="16" Opacity="0.35" />
+                    <controls:RemoteImage Url="{Binding Track, Converter={x:Static conv:ArtworkConverter.Instance}}"
+                                          Stretch="UniformToFill" DecodeWidth="96" />
+                  </Panel>
+                </Border>
+                <!-- Playing marker; the slot is always present, so titles line up. -->
+                <Panel Grid.Column="1" Width="14">
+                  <PathIcon Data="{StaticResource Icon.Play}" Width="12" Height="12"
+                            VerticalAlignment="Center"
+                            Foreground="{StaticResource Token.Brush.Accent}">
+                    <PathIcon.IsVisible>
+                      <MultiBinding Converter="{x:Static conv:IsPlayingTrackConverter.Instance}">
+                        <Binding Path="Track.Identity" />
+                        <Binding Path="$parent[Window].((vm:MainViewModel)DataContext).Player.NowPlaying.Identity" />
+                      </MultiBinding>
+                    </PathIcon.IsVisible>
+                  </PathIcon>
+                </Panel>
+                <StackPanel Grid.Column="2" Classes="rowtext" Spacing="1" VerticalAlignment="Center">
+                  <TextBlock Classes="rowtitle" Text="{Binding Title}" />
+                  <!-- The album moves to its column while that shows. -->
+                  <TextBlock Classes="rowmeta" Text="{Binding Subtitle}">
+                    <TextBlock.IsVisible>
+                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="!$parent[ListBox].(controls:TrackColumns.ShowsAlbum)" />
+                        <Binding Path="Subtitle" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                      </MultiBinding>
+                    </TextBlock.IsVisible>
+                  </TextBlock>
+                  <TextBlock Classes="rowmeta" Text="{Binding Track.ArtistDisplay}">
+                    <TextBlock.IsVisible>
+                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="$parent[ListBox].(controls:TrackColumns.ShowsAlbum)" />
+                        <Binding Path="Track.ArtistDisplay" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                      </MultiBinding>
+                    </TextBlock.IsVisible>
+                  </TextBlock>
+                </StackPanel>
+                <!-- The album while the list has room for it (Controls/TrackColumns):
+                     a file's own tag, as text, since a file has no album page; a
+                     download's links as its song's does. -->
+                <Panel Grid.Column="3" Classes="rowalbum"
+                       Width="{Binding $parent[ListBox].(controls:TrackColumns.AlbumWidth)}">
+                  <Panel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                      <Binding Path="$parent[ListBox].(controls:TrackColumns.ShowsAlbum)" />
+                      <Binding Path="Track.Album" Converter="{x:Static StringConverters.IsNotNullOrEmpty}" />
+                    </MultiBinding>
+                  </Panel.IsVisible>
+                  <Button Classes="textlink rowlink" IsTabStop="False"
+                          IsVisible="{Binding Track.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          ToolTip.Tip="{l:T common.goToAlbum}"
+                          Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToAlbumCommand}"
+                          CommandParameter="{Binding Track}">
+                    <TextBlock Text="{Binding Track.Album}" />
+                  </Button>
+                  <TextBlock Classes="rowmeta" Text="{Binding Track.Album}"
+                             IsVisible="{Binding Track.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNull}}" />
+                </Panel>
+                <!-- Play and queue; a download adds its own actions. -->
+                <Panel Grid.Column="4" MinWidth="112">
+                  <StackPanel Classes="rowactions" Orientation="Horizontal"
+                              HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.play}"
+                            AutomationProperties.Name="{l:T common.play}"
+                            IsVisible="{Binding !IsMissing}"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.PlayCommand}"
+                            CommandParameter="{Binding}">
+                      <PathIcon Data="{StaticResource Icon.Play}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small" ToolTip.Tip="{l:T common.addToQueue}"
+                            AutomationProperties.Name="{l:T common.addToQueue}"
+                            IsVisible="{Binding !IsMissing}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.AddToQueueCommand}"
+                            CommandParameter="{Binding Track}">
+                      <PathIcon Data="{StaticResource Icon.Add}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.ExportOneCommand}"
+                            CommandParameter="{Binding Download}"
+                            IsEnabled="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.CanExport, FallbackValue=False}"
+                            ToolTip.Tip="{l:T downloads.export.one}" AutomationProperties.Name="{l:T downloads.export.one}">
+                      <Button.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                          <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).Local.IsDownloadsFilter" />
+                          <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.ExportEnabled" FallbackValue="False" />
+                          <Binding Path="IsDownload" />
+                          <Binding Path="!IsMissing" />
+                        </MultiBinding>
+                      </Button.IsVisible>
+                      <PathIcon Data="{StaticResource Icon.Export}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small" IsVisible="{Binding IsMissing}"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.DownloadAgainCommand}"
+                            CommandParameter="{Binding Download}"
+                            ToolTip.Tip="{l:T downloads.downloadAgain}" AutomationProperties.Name="{l:T downloads.downloadAgain}">
+                      <PathIcon Data="{StaticResource Icon.Download}" Width="16" Height="16" />
+                    </Button>
+                    <Button Classes="icon subtle small" IsVisible="{Binding IsDownload}"
+                            Command="{Binding #Root.((vm:LibraryPageViewModel)DataContext).Local.Downloads.RemoveCommand}"
+                            CommandParameter="{Binding Download}"
+                            ToolTip.Tip="{l:T downloads.remove}" AutomationProperties.Name="{l:T downloads.remove}">
+                      <PathIcon Data="{StaticResource Icon.Delete}" Width="16" Height="16" />
+                    </Button>
+                  </StackPanel>
+                </Panel>
+                <Panel Grid.Column="5" Margin="8,0">
+                  <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right" VerticalAlignment="Center"
+                              IsVisible="{Binding IsMissing}" ToolTip.Tip="{l:T downloads.missingTip}">
+                    <PathIcon Data="{StaticResource Icon.Warning}" Width="14" Height="14"
+                              Foreground="{StaticResource Token.Brush.Error}" />
+                    <TextBlock Classes="rowmeta" Text="{l:T downloads.missing}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center"
+                              IsVisible="{Binding !IsMissing}">
+                    <TextBlock Classes="rowmeta" Text="{Binding Size}">
+                      <TextBlock.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                          <Binding Path="#Root.((vm:LibraryPageViewModel)DataContext).Local.IsDownloadsFilter" />
+                          <Binding Path="IsDownload" />
+                        </MultiBinding>
+                      </TextBlock.IsVisible>
+                    </TextBlock>
+                    <TextBlock Classes="rowmeta" MinWidth="40" TextAlignment="Right"
+                               Text="{Binding Track.Duration, Converter={x:Static conv:DurationFormat.Converter}}" />
+                  </StackPanel>
+                </Panel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Panel>
+    </DockPanel>
+
+    <!-- The next page loads as the list nears its end (code-behind); this
+         only says so while it does. A failed page shows its Try again above. -->
+    <ProgressBar Grid.Row="3" IsIndeterminate="True" Width="80" HorizontalAlignment="Left" Margin="4,8,16,8"
+                 AutomationProperties.Name="{l:T common.loading}">
+      <ProgressBar.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="IsYouTubeMusic" />
+          <Binding Path="SelectedSection.IsLoadingMore" />
+        </MultiBinding>
+      </ProgressBar.IsVisible>
+    </ProgressBar>
+  </Grid>
+</UserControl>

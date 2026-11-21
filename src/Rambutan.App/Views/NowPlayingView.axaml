@@ -1,0 +1,266 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Rambutan.App.Localization"
+             xmlns:vm="using:Rambutan.App.ViewModels"
+             xmlns:controls="using:Rambutan.App.Controls"
+             xmlns:views="using:Rambutan.App.Views"
+             xmlns:layout="using:Rambutan.Core.Layout"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+             x:Class="Rambutan.App.Views.NowPlayingView"
+             x:DataType="vm:NowPlayingViewModel">
+
+  <Design.DataContext>
+    <vm:NowPlayingViewModel />
+  </Design.DataContext>
+
+  <!-- Fullscreen's controls fade out without input, and the title card shows
+       on its own clock; under reduced motion they come and go without a fade. -->
+  <UserControl.Styles>
+    <Style Selector="Panel.chromeHidden :is(Control).chrome">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Panel.chromeHidden :is(Control).chrome.held">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="StackPanel.titlecard">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="StackPanel.titlecard.shown">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Window:not(.reducedmotion) :is(Control).chrome, Window:not(.reducedmotion) StackPanel.titlecard">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.3" />
+        </Transitions>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Translucent over the shell's PageBackground: no blurred copy of its own. The
+       page underneath is hidden while this is open (MainWindow), so what shows
+       through is the shared backdrop, or the window colour with ambient off.
+       The gradient only deepens the bottom, where the visualizer sits. -->
+  <Panel Background="Transparent">
+    <Border>
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+          <GradientStop Offset="0" Color="#000A0A0C" />
+          <GradientStop Offset="1" Color="#990A0A0C" />
+        </LinearGradientBrush>
+      </Border.Background>
+    </Border>
+
+    <!-- The stage: the visualizer fills the pane, under the header's buttons,
+         and dims behind the artwork and the lyrics. The radial style draws
+         around the artwork instead. Under reduced motion a note shows instead. -->
+    <controls:VisualizerControl x:Name="StageVisualizer" Margin="24,60,24,24" IsHitTestVisible="False"
+                                IsVisible="{Binding IsStageVisualizerShown}" IsActive="{Binding IsStageActive}"
+                                Opacity="{Binding StageOpacity}"
+                                VisualizerStyle="{Binding StageStyle}" BarColor="{Binding Colors.Color}"
+                                MaxFrameRate="{Binding Appearance.VisualizerFrameRate}" />
+
+    <Grid x:Name="Body" RowDefinitions="*,Auto" Margin="48,40">
+
+      <!-- Nothing loaded: say where music comes from instead of a bare title.
+          Search closes the overlay, like any navigation. -->
+      <StackPanel Grid.Row="0" Classes="empty"
+                  IsVisible="{Binding Player.ShownTrack, Converter={x:Static ObjectConverters.IsNull}}">
+        <PathIcon Data="{StaticResource Icon.Play}" />
+        <TextBlock Classes="title" Text="{l:T player.nothingPlaying}" />
+        <TextBlock Classes="hint" Text="{l:T nowPlaying.emptyHint}" />
+        <Button Classes="accent" HorizontalAlignment="Center" Margin="0,10,0,0"
+                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).GoSearchCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <PathIcon Data="{StaticResource Icon.Search}" Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:T nav.search}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+
+      <!-- Over the stage: the artwork and title, the lyrics, both (side by
+           side, or the lyrics under a small header when narrow), or neither.
+           The arrangement is set in code-behind (ApplyLayout), since grid
+           definitions can't be styled. -->
+      <Grid x:Name="Stage" Grid.Row="0"
+            IsVisible="{Binding Player.ShownTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
+
+      <!-- Track identity: the artwork when it shows, and the title; a column,
+           or a header row above the lyrics (code-behind places the parts). -->
+      <Grid x:Name="Identity" VerticalAlignment="Center" HorizontalAlignment="Center"
+            IsVisible="{Binding IsIdentityShown}">
+        <!-- The radial style draws around the artwork, behind it: its control
+             reaches RadialRenderer.Margin past the artwork on every side
+             (code-behind), and takes no input from it. -->
+        <Panel x:Name="ArtSlot" HorizontalAlignment="Center" Margin="0,0,0,28"
+               IsVisible="{Binding IsArtworkShown}">
+          <controls:VisualizerControl x:Name="Ring" VisualizerStyle="Radial" IsHitTestVisible="False"
+                                      IsVisible="{Binding ShowsRing}" IsActive="{Binding IsRingActive}"
+                                      BarColor="{Binding Colors.Color}"
+                                      MaxFrameRate="{Binding Appearance.VisualizerFrameRate}" />
+          <Border x:Name="Art" CornerRadius="12" ClipToBounds="True" Width="300" Height="300">
+            <controls:CoverImage Url="{Binding Player.ArtworkUrl}"
+                                 DecodeWidth="{x:Static layout:NowPlayingLayout.DecodeWidth}"
+                                 Stretch="UniformToFill"
+                                 ReduceMotion="{Binding $parent[Window].((vm:MainViewModel)DataContext).Appearance.ReduceMotion}" />
+          </Border>
+        </Panel>
+        <!-- Links as in the player bar; following one closes
+             this overlay, since any navigation does. -->
+        <Button x:Name="TitleLink" Classes="link" HorizontalAlignment="Center" MaxWidth="560"
+                FontSize="24" FontWeight="SemiBold"
+                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToAlbumCommand}"
+                CommandParameter="{Binding Player.ShownTrack}"
+                Classes.inert="{Binding Player.ShownTrack.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNull}}"
+                ToolTip.Tip="{l:T common.goTo, Arg={Binding Player.DisplayedTrack.Album}}">
+          <TextBlock x:Name="TitleText" Text="{Binding Player.Title}"
+                     TextAlignment="Center" TextWrapping="Wrap" MaxLines="2"
+                     TextTrimming="CharacterEllipsis" />
+        </Button>
+        <!-- Wraps rather than overflowing a narrow stage: the album drops to its own line. -->
+        <WrapPanel x:Name="Credits" Orientation="Horizontal" HorizontalAlignment="Center" MaxWidth="560"
+                    Margin="0,6,0,0" Opacity="0.65">
+          <Button Classes="link" FontSize="15" MaxWidth="300"
+                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToArtistCommand}"
+                  CommandParameter="{Binding Player.ShownTrack.PrimaryArtist}"
+                  Classes.inert="{Binding Player.ShownTrack.PrimaryArtist, Converter={x:Static ObjectConverters.IsNull}}"
+                  ToolTip.Tip="{l:T common.goTo, Arg={Binding Player.DisplayedTrack.PrimaryArtist.Name}}">
+            <TextBlock Text="{Binding Player.DisplayedTrack.ArtistDisplay}" TextTrimming="CharacterEllipsis" />
+          </Button>
+          <TextBlock Text=" • " FontSize="15" VerticalAlignment="Center"
+                     IsVisible="{Binding Player.DisplayedTrack.Album, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <Button Classes="link" FontSize="15" MaxWidth="250"
+                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).Actions.GoToAlbumCommand}"
+                  CommandParameter="{Binding Player.ShownTrack}"
+                  Classes.inert="{Binding Player.ShownTrack.AlbumBrowseId, Converter={x:Static ObjectConverters.IsNull}}"
+                  IsVisible="{Binding Player.DisplayedTrack.Album, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                  ToolTip.Tip="{l:T common.goTo, Arg={Binding Player.DisplayedTrack.Album}}">
+            <TextBlock Text="{Binding Player.DisplayedTrack.Album}" TextTrimming="CharacterEllipsis" />
+          </Button>
+        </WrapPanel>
+      </Grid>
+
+      <views:LyricsPane x:Name="LyricsHost" DataContext="{Binding Lyrics}"
+                        IsVisible="{Binding $parent[UserControl].((vm:NowPlayingViewModel)DataContext).IsLyricsPaneVisible}" />
+      </Grid>
+
+      <!-- Under reduced motion the visualizer stops drawing, and this says
+           so in its place rather than leaving the pane still. -->
+      <TextBlock x:Name="PausedNote" Grid.Row="1" Text="{l:T nowPlaying.visualizerPaused}"
+                 FontSize="12" Opacity="0.55" HorizontalAlignment="Center" Margin="24,16,24,0"
+                 IsVisible="{Binding IsPausedNoteShown}" />
+    </Grid>
+
+    <!-- Without a GPU, Skia draws on the CPU, and the presets draw at a
+         lower resolution to keep that affordable. -->
+    <TextBlock Text="{l:T nowPlaying.softwareRendering}" FontSize="12" Opacity="0.55"
+               HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="24,0,24,12"
+               TextWrapping="Wrap" TextAlignment="Center"
+               IsVisible="{Binding ShowsSoftwareNote}" />
+
+    <!-- Fullscreen's controls: the header, the title card and the transport,
+         over shades that keep them readable on a bright preset. Without input
+         for a while they fade out with the pointer (chromeHidden); they stay
+         focusable, and any key brings them back (code-behind). -->
+    <Panel x:Name="Chrome" Classes.chromeHidden="{Binding IsChromeHidden}">
+      <Border Classes="chrome" Classes.held="{Binding IsTitleCardShown}" Height="160" VerticalAlignment="Top"
+              IsHitTestVisible="False" IsVisible="{Binding IsFullscreen}">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#B3000000" />
+            <GradientStop Offset="1" Color="#00000000" />
+          </LinearGradientBrush>
+        </Border.Background>
+      </Border>
+
+      <!-- Header: the artwork, lyrics and fullscreen toggles (the first two
+           remembered in settings; lit while on), then collapse, mirroring the
+           expand affordance on the player-bar artwork. Fullscreen leaves by
+           its own button or Esc. -->
+      <StackPanel x:Name="Header" Classes="chrome" Orientation="Horizontal" Spacing="4"
+                  HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,16,0">
+        <Button x:Name="ArtworkToggle" Classes="icon subtle" Classes.active="{Binding ShowArtwork}"
+                Command="{Binding ToggleArtworkCommand}"
+                ToolTip.Tip="{Binding ArtworkToggleTip}"
+                AutomationProperties.Name="{Binding ArtworkToggleTip}"
+                IsVisible="{Binding Player.NowPlaying, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <PathIcon Data="{StaticResource Icon.Artwork}" Width="20" Height="20" />
+        </Button>
+        <Button x:Name="LyricsToggle" Classes="icon subtle" Classes.active="{Binding ShowLyrics}"
+                Command="{Binding ToggleLyricsCommand}"
+                ToolTip.Tip="{Binding LyricsToggleTip}"
+                AutomationProperties.Name="{Binding LyricsToggleTip}"
+                IsVisible="{Binding Player.NowPlaying, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <PathIcon Data="{StaticResource Icon.Lyrics}" Width="20" Height="20" />
+        </Button>
+        <Button x:Name="FullscreenToggle" Classes="icon subtle"
+                Command="{Binding ToggleFullscreenCommand}"
+                ToolTip.Tip="{Binding FullscreenTip}"
+                AutomationProperties.Name="{Binding FullscreenTip}">
+          <Panel>
+            <PathIcon Data="{StaticResource Icon.Fullscreen}" Width="22" Height="22" IsVisible="{Binding IsWindowed}" />
+            <PathIcon Data="{StaticResource Icon.FullscreenExit}" Width="22" Height="22" IsVisible="{Binding IsFullscreen}" />
+          </Panel>
+        </Button>
+        <Button Classes="icon subtle" Command="{Binding CloseCommand}"
+                ToolTip.Tip="{l:T nowPlaying.collapse}"
+                AutomationProperties.Name="{l:T nowPlaying.collapse}"
+                IsVisible="{Binding IsWindowed}">
+          <PathIcon Data="{StaticResource Icon.ChevronDown}" Width="22" Height="22" />
+        </Button>
+      </StackPanel>
+
+      <!-- What is playing, when a track starts and with the controls. Not a
+           link: following one would leave fullscreen for a page. -->
+      <StackPanel x:Name="TitleCard" Classes="titlecard" Classes.shown="{Binding IsTitleCardShown}"
+                  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="32,24,200,0"
+                  IsHitTestVisible="False" IsVisible="{Binding IsFullscreen}">
+        <TextBlock Text="{Binding Player.Title}" FontSize="24" FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="{Binding Player.DisplayedTrack.ArtistDisplay}" FontSize="15" Opacity="0.75"
+                   Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+
+      <Border Classes="chrome" Height="200" VerticalAlignment="Bottom"
+              IsHitTestVisible="False" IsVisible="{Binding IsFullscreen}">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Offset="0" Color="#00000000" />
+            <GradientStop Offset="1" Color="#B3000000" />
+          </LinearGradientBrush>
+        </Border.Background>
+      </Border>
+
+      <StackPanel x:Name="Transport" Classes="chrome" Orientation="Horizontal" Spacing="10"
+                  HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,32"
+                  IsVisible="{Binding IsFullscreen}">
+        <Button Classes="icon" Command="{Binding Player.PreviousCommand}"
+                ToolTip.Tip="{l:T player.previous}" AutomationProperties.Name="{l:T player.previous}"
+                IsEnabled="{Binding Player.HasQueue}">
+          <PathIcon Data="{StaticResource Icon.Previous}" Width="24" Height="24" />
+        </Button>
+        <Button Classes="playcircle" Command="{Binding Player.TogglePlayPauseCommand}"
+                ToolTip.Tip="{Binding Player.PlayPauseTip}" AutomationProperties.Name="{Binding Player.PlayPauseTip}"
+                IsEnabled="{Binding Player.HasQueue}">
+          <Panel>
+            <Panel IsVisible="{Binding !Player.IsBuffering}">
+              <PathIcon Data="{StaticResource Icon.Play}" Width="24" Height="24"
+                        IsVisible="{Binding !Player.IsPlaying}" />
+              <PathIcon Data="{StaticResource Icon.Pause}" Width="24" Height="24"
+                        IsVisible="{Binding Player.IsPlaying}" />
+            </Panel>
+            <Arc Classes="spinner" IsVisible="{Binding Player.IsBuffering}" />
+          </Panel>
+        </Button>
+        <Button Classes="icon" Command="{Binding Player.NextCommand}"
+                ToolTip.Tip="{l:T player.next}" AutomationProperties.Name="{l:T player.next}"
+                IsEnabled="{Binding Player.HasQueue}">
+          <PathIcon Data="{StaticResource Icon.Next}" Width="24" Height="24" />
+        </Button>
+      </StackPanel>
+    </Panel>
+  </Panel>
+</UserControl>

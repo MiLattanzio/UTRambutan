@@ -1,0 +1,10 @@
+{
+  "name": "rambutan.milattanzio",
+  "title": "Rambutan",
+  "version": "0.1.9",
+  "description": "Rambutan Music Player per Ubuntu Touch, Avalonia e UTDotNet",
+  "maintainer": "Mi <mi@polecola.it>",
+  "architecture": "arm64",
+  "framework": "ubuntu-touch-24.04-2.x",
+  "hooks": { "rambutan": { "apparmor": "rambutan.apparmor", "desktop": "rambutan.desktop" } }
+}

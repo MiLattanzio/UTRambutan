@@ -1,0 +1,126 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Rambutan.App.ViewModels" xmlns:views="using:Rambutan.App.Views"
+        xmlns:controls="using:Rambutan.App.Controls" xmlns:l="using:Rambutan.App.Localization"
+        x:Class="Rambutan.App.Views.PhoneWindow" x:DataType="vm:MainViewModel"
+        x:Name="Root" Classes="phone" Title="{l:T phone.appName}" Icon="/Assets/rambutan.ico"
+        Width="408" Height="840" MinWidth="280" Background="{StaticResource Token.Brush.Ground}">
+  <Window.DataTemplates>
+    <DataTemplate DataType="{x:Type vm:HomePageViewModel}">
+      <views:HomePage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SearchPageViewModel}">
+      <views:PhoneSearchPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:LibraryPageViewModel}">
+      <views:LibraryPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:ListeningStatsViewModel}">
+      <views:StatsPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}">
+      <views:PhoneSettingsPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:AlbumPageViewModel}">
+      <views:AlbumPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:PlaylistPageViewModel}">
+      <views:PlaylistPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:LocalPlaylistPageViewModel}">
+      <views:LocalPlaylistPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:ArtistPageViewModel}">
+      <views:ArtistPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:StationPageViewModel}">
+      <views:StationPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SpotifyImportViewModel}">
+      <views:SpotifyImportPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:MoodsPageViewModel}">
+      <views:MoodsPage />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:MoodCategoryPageViewModel}">
+      <views:MoodCategoryPage />
+    </DataTemplate>
+  </Window.DataTemplates>
+  <Border>
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
+      <Grid x:Name="PhoneHeader" ColumnDefinitions="Auto,*,Auto" Margin="12,4">
+        <Button Classes="icon" Command="{Binding Navigation.BackCommand}" IsEnabled="{Binding Navigation.CanGoBack}"
+                AutomationProperties.Name="{l:T phone.back}"><PathIcon Data="{StaticResource Icon.ChevronLeft}" Width="20" Height="20" /></Button>
+        <TextBlock Grid.Column="1" Text="{l:T phone.appName}" FontWeight="Bold" FontSize="24" VerticalAlignment="Center" Margin="12,0" />
+        <Button Grid.Column="2" Classes="icon" Command="{Binding GoSettingsCommand}" AutomationProperties.Name="{l:T phone.settings}">
+          <PathIcon Data="{StaticResource Icon.Settings}" Width="22" Height="22" />
+        </Button>
+      </Grid>
+      <Panel Grid.Row="1" Margin="12,6" ClipToBounds="True">
+        <ContentControl Content="{Binding Navigation.Current}" IsVisible="{Binding !IsQueueOpen}" />
+        <Grid RowDefinitions="Auto,*" IsVisible="{Binding IsQueueOpen}" Background="{StaticResource Token.Brush.Ground}">
+          <TextBlock Text="{l:T phone.queueTitle}" FontSize="24" FontWeight="Bold" Margin="4,8,4,16" />
+          <ListBox Grid.Row="1" ItemsSource="{Binding QueuePanel.Items}" Background="Transparent">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:QueueItemViewModel">
+                <Grid ColumnDefinitions="*,Auto">
+                  <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Background="Transparent"
+                          Command="{Binding #Root.((vm:MainViewModel)DataContext).QueuePanel.JumpCommand}" CommandParameter="{Binding}">
+                    <StackPanel><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding Artist}" Opacity="0.65" FontSize="14" TextTrimming="CharacterEllipsis" /></StackPanel>
+                  </Button>
+                  <Button Grid.Column="1" Command="{Binding #Root.((vm:MainViewModel)DataContext).QueuePanel.RemoveCommand}" CommandParameter="{Binding}" AutomationProperties.Name="{l:T phone.removeQueue}">
+                    <PathIcon Data="{StaticResource Icon.Close}" Width="18" Height="18" />
+                  </Button>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+        <Border IsVisible="{Binding NowPlaying.IsOpen}" Background="{StaticResource Token.Brush.Ground}">
+          <ScrollViewer>
+            <StackPanel Spacing="16" Margin="12">
+              <Button Content="{l:T phone.closePlayer}" Command="{Binding ToggleNowPlayingCommand}" />
+              <controls:CoverImage Url="{Binding Player.ArtworkUrl}" Height="240" Stretch="Uniform" DecodeWidth="600" />
+              <TextBlock Text="{Binding Player.Title}" FontSize="24" FontWeight="Bold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Player.Artist}" TextWrapping="Wrap" Opacity="0.7" />
+              <Slider x:Name="SeekSlider" Minimum="0" Maximum="{Binding Player.DurationSeconds}" Value="{Binding Player.PositionSeconds, Mode=OneWay}" />
+              <Grid ColumnDefinitions="*,*"><TextBlock Text="{Binding Player.ElapsedDisplay}" /><TextBlock Grid.Column="1" Text="{Binding Player.DurationDisplay}" HorizontalAlignment="Right" /></Grid>
+              <Grid ColumnDefinitions="*,*,*">
+                <Button Command="{Binding Player.PreviousCommand}" HorizontalAlignment="Stretch" AutomationProperties.Name="{l:T phone.previous}"><PathIcon Data="{StaticResource Icon.Previous}" /></Button>
+                <Button Grid.Column="1" Command="{Binding Player.TogglePlayPauseCommand}" HorizontalAlignment="Stretch" AutomationProperties.Name="{Binding Player.PlayPauseTip}"><Panel><PathIcon Data="{StaticResource Icon.Play}" IsVisible="{Binding !Player.IsPlaying}" /><PathIcon Data="{StaticResource Icon.Pause}" IsVisible="{Binding Player.IsPlaying}" /></Panel></Button>
+                <Button Grid.Column="2" Command="{Binding Player.NextCommand}" HorizontalAlignment="Stretch" AutomationProperties.Name="{l:T phone.next}"><PathIcon Data="{StaticResource Icon.Next}" /></Button>
+              </Grid>
+              <views:LyricsPane DataContext="{Binding NowPlaying.Lyrics}" Height="300" />
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+        <views:ToastHost DataContext="{Binding Toasts}" VerticalAlignment="Bottom" />
+      </Panel>
+      <Border Grid.Row="2" IsVisible="{Binding HasStatus}" Background="#25252E" Padding="12,6">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding SidecarProgress}" TextWrapping="Wrap" IsVisible="{Binding SidecarProgress, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Text="{Binding NetworkWaitText}" TextWrapping="Wrap" IsVisible="{Binding TrackWaitingForNetwork, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <Button Content="{l:T phone.retryAudio}" Command="{Binding RetrySidecarsCommand}" IsVisible="{Binding SidecarsFailed}" />
+          <TextBlock Text="{Binding SidecarError}" TextWrapping="Wrap" MaxHeight="72" IsVisible="{Binding SidecarsFailed}" />
+        </StackPanel>
+      </Border>
+      <Border x:Name="MiniPlayer" Grid.Row="3" Background="#292932" Padding="8" IsVisible="{Binding Player.HasQueue}">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <Button Command="{Binding ToggleNowPlayingCommand}" Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Grid ColumnDefinitions="48,*" ColumnSpacing="10">
+              <controls:CoverImage Url="{Binding Player.ArtworkUrl}" Height="48" Width="48" DecodeWidth="128" Stretch="UniformToFill" />
+              <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding Player.Title}" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding Player.Artist}" FontSize="14" Opacity="0.65" TextTrimming="CharacterEllipsis" /></StackPanel>
+            </Grid>
+          </Button>
+          <Button Grid.Column="1" Command="{Binding Player.TogglePlayPauseCommand}" AutomationProperties.Name="{Binding Player.PlayPauseTip}"><Panel><PathIcon Data="{StaticResource Icon.Play}" IsVisible="{Binding !Player.IsPlaying}" /><PathIcon Data="{StaticResource Icon.Pause}" IsVisible="{Binding Player.IsPlaying}" /></Panel></Button>
+          <Button Grid.Column="2" Command="{Binding Player.NextCommand}" AutomationProperties.Name="{l:T phone.next}"><PathIcon Data="{StaticResource Icon.Next}" /></Button>
+        </Grid>
+      </Border>
+      <Grid x:Name="NavigationBar" Grid.Row="4" ColumnDefinitions="*,*,*,*" Background="#1D1D24">
+        <Button Classes="phonenav" Click="OnHome"><StackPanel Spacing="4"><PathIcon Data="{StaticResource Icon.Home}" Width="22" Height="22" /><TextBlock Text="{l:T phone.home}" FontSize="14" HorizontalAlignment="Center" /></StackPanel></Button>
+        <Button Grid.Column="1" Classes="phonenav" Click="OnSearch"><StackPanel Spacing="4"><PathIcon Data="{StaticResource Icon.Search}" Width="22" Height="22" /><TextBlock Text="{l:T phone.search}" FontSize="14" HorizontalAlignment="Center" /></StackPanel></Button>
+        <Button Grid.Column="2" Classes="phonenav" Click="OnLibrary"><StackPanel Spacing="4"><PathIcon Data="{StaticResource Icon.Library}" Width="22" Height="22" /><TextBlock Text="{l:T phone.library}" FontSize="14" HorizontalAlignment="Center" /></StackPanel></Button>
+        <Button Grid.Column="3" Classes="phonenav" Click="OnQueue"><StackPanel Spacing="4"><PathIcon Data="{StaticResource Icon.Queue}" Width="22" Height="22" /><TextBlock Text="{l:T phone.queue}" FontSize="14" HorizontalAlignment="Center" /></StackPanel></Button>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

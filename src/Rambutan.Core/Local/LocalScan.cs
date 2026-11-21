@@ -1,0 +1,320 @@
+using System.Globalization;
+
+namespace Rambutan.Core.Local;
+
+/// <summary>
+/// The ids local files play under: <c>local:</c> and a number. The colon keeps
+/// them apart from YouTube's ids (<see cref="Models.YouTubeIds"/>), so none is
+/// ever sent there. A number is given once: a file keeps its id while it stays
+/// at its path, and no other file gets it after it, since the queue tells tracks
+/// apart by id.
+/// </summary>
+public static class LocalIds
+{
+    public const string Prefix = "local:";
+
+    public static string Format(long number) => Prefix + number.ToString(CultureInfo.InvariantCulture);
+
+    public static bool IsLocal(string? id) => id is not null && id.StartsWith(Prefix, StringComparison.Ordinal);
+}
+
+/// <summary>
+/// How paths compare: without case on Windows, whose file systems ignore it, and
+/// exactly elsewhere. Paths reach here already full (no "..", no relative parts).
+/// </summary>
+public sealed class LocalPaths(bool ignoreCase, char separator, char? altSeparator = null)
+{
+    public static LocalPaths Windows { get; } = new(ignoreCase: true, '\\', '/');
+
+    public static LocalPaths Unix { get; } = new(ignoreCase: false, '/');
+
+    public static LocalPaths Platform { get; } = OperatingSystem.IsWindows() ? Windows : Unix;
+
+    public char Separator => separator;
+
+    public StringComparer Comparer { get; } = ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    private StringComparison Comparison => ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    /// <summary>True when <paramref name="path"/> is <paramref name="root"/> or
+    /// lies anywhere inside it. "C:\Music2" is not inside "C:\Music".</summary>
+    public bool IsUnder(string path, string root)
+    {
+        var trimmed = root.TrimEnd(separator);
+        if (altSeparator is { } alt)
+            trimmed = trimmed.TrimEnd(alt);
+        if (!path.StartsWith(trimmed, Comparison))
+            return false;
+        if (path.Length == trimmed.Length)
+            return true;
+        var next = path[trimmed.Length];
+        return next == separator || next == altSeparator;
+    }
+
+    /// <summary>True when <paramref name="path"/> (full) names a host: a
+    /// Windows UNC path. Looking at one, even to see whether it is there, makes
+    /// Windows connect to that host and offer it the signed-in user's
+    /// credentials. Never true elsewhere, where a share is a mount the user
+    /// made. A drive letter behind <c>\\?\</c> is not a host.</summary>
+    public bool IsNetwork(string path)
+    {
+        if (altSeparator is null)
+            return false;
+        path = Unify(path);
+        if (path.Length < 3 || path[0] != separator || path[1] != separator)
+            return false;
+        return !(IsDevice(path) && path.Length >= 7 && char.IsAsciiLetter(path[4]) && path[5] == ':' &&
+                 path[6] == separator);
+    }
+
+    /// <summary>The share a network path is on (<c>\\server\share\</c>); null
+    /// for a path that isn't one, and for a device path, whose host comes
+    /// later in it.</summary>
+    public string? ShareOf(string path)
+    {
+        if (!IsNetwork(path))
+            return null;
+        path = Unify(path);
+        return IsDevice(path) ? null : Root(path);
+    }
+
+    // \\?\ and \\.\, on a path already known to start with two separators.
+    private bool IsDevice(string path) =>
+        path.Length > 3 && path[2] is '?' or '.' && path[3] == separator;
+
+    /// <summary>
+    /// The full path <paramref name="path"/> names, a relative one taken from
+    /// <paramref name="folder"/> (a full path): one separator throughout, and
+    /// "." and ".." resolved, a ".." at the root staying there. On Windows a
+    /// path that starts with one separator is on the folder's drive. Strings
+    /// only: nothing is read from the disk or the current directory.
+    /// </summary>
+    public string Full(string path, string folder)
+    {
+        path = Unify(path);
+        string root, rest;
+        if (Root(path) is { } own)
+            (root, rest) = (own, path[own.Length..]);
+        else
+        {
+            folder = Unify(folder);
+            root = Root(folder) ?? "";
+            rest = altSeparator is not null && path.StartsWith(separator)
+                ? path
+                : folder[root.Length..] + separator + path;
+        }
+        var kept = new List<string>();
+        foreach (var part in rest.Split(separator))
+        {
+            if (part is "" or ".")
+                continue;
+            if (part == "..")
+            {
+                if (kept.Count > 0)
+                    kept.RemoveAt(kept.Count - 1);
+            }
+            else
+                kept.Add(part);
+        }
+        return root + string.Join(separator, kept);
+    }
+
+    /// <summary>
+    /// <paramref name="path"/> relative to <paramref name="folder"/> (both full),
+    /// with ".." to climb; the path itself when they don't share a root (another
+    /// drive on Windows).
+    /// </summary>
+    public string Relative(string folder, string path)
+    {
+        folder = Full(folder, folder);
+        path = Full(path, path);
+        if (Root(path) is not { } root || Root(folder) is not { } folderRoot || !Comparer.Equals(root, folderRoot))
+            return path;
+        var from = folder[root.Length..].Split(separator, StringSplitOptions.RemoveEmptyEntries);
+        var to = path[root.Length..].Split(separator, StringSplitOptions.RemoveEmptyEntries);
+        var common = 0;
+        while (common < from.Length && common < to.Length - 1 && Comparer.Equals(from[common], to[common]))
+            common++;
+        return string.Join(separator, Enumerable.Repeat("..", from.Length - common).Concat(to[common..]));
+    }
+
+    private string Unify(string path) => altSeparator is { } alt ? path.Replace(alt, separator) : path;
+
+    // C:\ and \\server\share\ on Windows, / elsewhere; null for a relative path.
+    private string? Root(string path)
+    {
+        if (altSeparator is null)
+            return path.StartsWith(separator) ? separator.ToString() : null;
+        if (path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] == separator)
+            return path[..3];
+        if (path.Length > 2 && path[0] == separator && path[1] == separator)
+        {
+            var share = path.IndexOf(separator, 2);
+            if (share < 0)
+                return null;
+            var end = path.IndexOf(separator, share + 1);
+            return end < 0 ? path + separator : path[..(end + 1)];
+        }
+        return null;
+    }
+
+    /// <summary>The file's name without its folder or extension ("song" for
+    /// ".../song.flac"). A name that starts with its only dot keeps it.</summary>
+    public string NameWithoutExtension(string path)
+    {
+        var start = path.LastIndexOf(separator) + 1;
+        if (altSeparator is { } alt)
+            start = Math.Max(start, path.LastIndexOf(alt) + 1);
+        var name = path[start..];
+        var dot = name.LastIndexOf('.');
+        return dot > 0 ? name[..dot] : name;
+    }
+}
+
+/// <summary>A file the scan found, with what the file system says of it.</summary>
+public readonly record struct FoundFile(string Path, long Size, DateTimeOffset ModifiedAt);
+
+/// <summary>A file the index has, with what was seen of it when it was last read.</summary>
+public readonly record struct KnownFile(string Id, string Path, long Size, DateTimeOffset ModifiedAt, bool IsMissing);
+
+/// <param name="IsNew">True when the file wasn't in the index; false when it
+/// changed or came back, and keeps its <paramref name="Id"/>.</param>
+public readonly record struct FileToRead(FoundFile File, string Id, bool IsNew);
+
+/// <summary>What a scan has to do to bring the index up to date.</summary>
+/// <param name="ToRead">New, changed and returning files, in the order found.</param>
+/// <param name="NowMissing">Ids of files that were there and no longer are.</param>
+/// <param name="Unchanged">Files whose size and modified time are as indexed.</param>
+/// <param name="NextId">The number the next new file gets.</param>
+public sealed record LocalScanPlan(
+    IReadOnlyList<FileToRead> ToRead, IReadOnlyList<string> NowMissing, int Unchanged, long NextId);
+
+public static class LocalScan
+{
+    /// <summary>
+    /// Compares a scan with the index. A file is read again only when its size or
+    /// modified time changed, or it was missing and is back. A known file that
+    /// wasn't found is missing only when a folder that holds it was scanned:
+    /// <paramref name="scannedRoots"/> leaves out a watched folder that couldn't be
+    /// listed (an unplugged drive, a share that's down), so its files stay as they
+    /// were rather than all going missing at once. Files outside every watched
+    /// folder are left alone as well, so a folder removed and added again gets its
+    /// ids back.
+    /// </summary>
+    /// <param name="found">May hold a path twice (watched folders inside one
+    /// another); it counts once.</param>
+    /// <param name="nextId">The number the next new file gets; ids are never reused.</param>
+    public static LocalScanPlan Plan(
+        IEnumerable<KnownFile> known, IEnumerable<FoundFile> found,
+        IReadOnlyCollection<string> scannedRoots, LocalPaths paths, long nextId)
+    {
+        var byPath = new Dictionary<string, KnownFile>(paths.Comparer);
+        foreach (var file in known)
+            byPath[file.Path] = file;
+
+        var seen = new HashSet<string>(paths.Comparer);
+        var toRead = new List<FileToRead>();
+        var unchanged = 0;
+        foreach (var file in found)
+        {
+            if (!seen.Add(file.Path))
+                continue;
+            if (!byPath.TryGetValue(file.Path, out var was))
+                toRead.Add(new FileToRead(file, LocalIds.Format(nextId++), IsNew: true));
+            else if (was.IsMissing || was.Size != file.Size || was.ModifiedAt != file.ModifiedAt)
+                toRead.Add(new FileToRead(file, was.Id, IsNew: false));
+            else
+                unchanged++;
+        }
+
+        var nowMissing = byPath.Values
+            .Where(k => !k.IsMissing && !seen.Contains(k.Path)
+                && scannedRoots.Any(root => paths.IsUnder(k.Path, root)))
+            .Select(k => k.Id)
+            .ToList();
+
+        return new LocalScanPlan(toRead, nowMissing, unchanged, nextId);
+    }
+
+    /// <summary>
+    /// The listed watched folders that count as unavailable all the same: ones
+    /// that hold no audio file now while the index has files present under them.
+    /// On Linux a mount whose drive or share is down is an ordinary empty folder,
+    /// and listing it would mark all its files missing at once. The maintainer's
+    /// decision, with its cost: a folder emptied on purpose keeps its files listed
+    /// until it is removed or a file comes back. A folder inside another listed
+    /// folder that isn't emptied doesn't count: that one's scan covers its files.
+    /// </summary>
+    public static IReadOnlyList<string> EmptiedRoots(
+        IEnumerable<KnownFile> known, IReadOnlyCollection<FoundFile> found,
+        IReadOnlyList<string> listed, LocalPaths paths)
+    {
+        var empty = listed.Where(root => !found.Any(f => paths.IsUnder(f.Path, root))).ToList();
+        if (empty.Count == 0)
+            return [];
+        var present = known.Where(k => !k.IsMissing).ToList();
+        var emptied = empty.Where(root => present.Any(k => paths.IsUnder(k.Path, root))).ToList();
+        return emptied
+            .Where(root => !listed.Any(outer => !emptied.Contains(outer, paths.Comparer)
+                && !paths.Comparer.Equals(outer, root) && paths.IsUnder(root, outer)))
+            .ToList();
+    }
+
+    /// <summary>The extensions a scan looks at. Only to keep it from opening
+    /// every file in the folder: the reader still goes by the content.</summary>
+    public static IReadOnlySet<string> AudioExtensions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp3", ".flac", ".m4a", ".m4b", ".mp4", ".aac", ".alac", ".ogg", ".oga", ".opus", ".webm",
+        ".mka", ".wav", ".wv", ".ape", ".aif", ".aiff", ".wma", ".dsf", ".mpc", ".tta",
+    };
+
+    /// <summary>How many files a scan reads at once: half the processor's cores,
+    /// at most 4 (maintainer's decision), so the app stays responsive and a
+    /// spinning disk isn't asked for many places at once.</summary>
+    public static int ReadThreads(int processorCount) => Math.Clamp(processorCount / 2, 1, 4);
+}
+
+/// <summary>A file in the local index.</summary>
+/// <param name="Tags">What the file's tags say, without the cover; null when the
+/// file couldn't be read as audio (<see cref="IsUnreadable"/>).</param>
+/// <param name="CoverPath">The cover's copy in the cover cache; null when the file
+/// has none.</param>
+/// <param name="IsMissing">The file was there and isn't now. It keeps its id, so
+/// a queue or playlist entry shows it as missing.</param>
+/// <param name="FolderCover">The folder's picture that <paramref name="CoverPath"/>
+/// is a copy of (<see cref="LocalFolderCovers"/>); null when the cover is
+/// embedded or there is none.</param>
+/// <param name="IsOpened">The user opened or dropped the file, outside the watched
+/// folders: it is kept only while a queue holds it.</param>
+/// <param name="Download">The download this file is, when the app downloaded it;
+/// null for the user's own files. A download plays under its YouTube id, never
+/// this file's id.</param>
+public sealed record LocalFile(
+    string Id, string Path, long Size, DateTimeOffset ModifiedAt,
+    LocalFileTags? Tags, string? CoverPath = null, bool IsMissing = false, FoundFile? FolderCover = null,
+    bool IsOpened = false, LocalDownload? Download = null)
+{
+    /// <summary>A download no scan or open has read: it has no tags because
+    /// nothing looked, not because it isn't audio, so it isn't listed.</summary>
+    public bool IsUnreadDownload => Download is not null && Tags is null;
+
+    public bool IsUnreadable => Tags is null;
+
+    /// <summary>A path a playlist file named that wasn't there when it was
+    /// imported, never read since: kept, unlisted, only while a playlist holds
+    /// it, so the file is found when it comes.</summary>
+    public bool IsNeverSeen => IsOpened && IsMissing && Tags is null;
+
+    public KnownFile Known => new(Id, Path, Size, ModifiedAt, IsMissing);
+}
+
+/// <summary>Where a scan is.</summary>
+/// <param name="Read">Files read so far in this scan.</param>
+/// <param name="ToRead">Files this scan has to read (new, changed, back).</param>
+/// <param name="UnavailableFolders">Watched folders that couldn't be listed;
+/// their files keep the state they had.</param>
+public sealed record LocalScanStatus(
+    bool IsScanning, int Read, int ToRead, IReadOnlyList<string> UnavailableFolders)
+{
+    public static LocalScanStatus Idle { get; } = new(false, 0, 0, []);
+}

@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:l="using:Rambutan.App.Localization"
+             xmlns:vm="using:Rambutan.App.ViewModels" x:Class="Rambutan.App.Views.PhoneSettingsPage"
+             x:DataType="vm:SettingsPageViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="16" Margin="4,8,4,24">
+      <TextBlock Text="{l:T phone.settings}" FontSize="28" FontWeight="Bold" />
+      <TextBlock Text="{Binding Session.AccountLabel}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Session.StatusDetail}" TextWrapping="Wrap" Opacity="0.7" />
+      <Button Content="{l:T phone.signIn}" Command="{Binding Session.SignInCommand}" HorizontalAlignment="Stretch" />
+      <Button Content="{l:T phone.signOut}" Command="{Binding Session.SignOutCommand}" IsVisible="{Binding Session.IsSignedIn}" HorizontalAlignment="Stretch" />
+      <TextBlock Text="{l:T phone.playback}" FontSize="22" FontWeight="Bold" Margin="0,8" />
+      <ToggleSwitch Content="{l:T phone.autoplay}" IsChecked="{Binding Autoplay}" MinHeight="48" />
+      <TextBlock Text="{l:T phone.audioQuality}" />
+      <ComboBox ItemsSource="{Binding AudioQualityChoices}" SelectedIndex="{Binding AudioQualityIndex}" HorizontalAlignment="Stretch">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:AudioQualityChoice"><TextBlock Text="{Binding}" /></DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+      <TextBlock Text="{l:T phone.audioCache}" />
+      <Slider Minimum="0" Maximum="2048" TickFrequency="128" IsSnapToTickEnabled="True" Value="{Binding AudioCacheSizeMb}" />
+      <TextBlock Text="{Binding AudioCacheSizeText}" Opacity="0.7" />
+      <TextBlock Text="{Binding VersionDisplay}" TextWrapping="Wrap" Margin="0,12" />
+      <TextBlock Text="{l:T phone.edition}" TextWrapping="Wrap" Opacity="0.7" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

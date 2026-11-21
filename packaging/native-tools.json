@@ -1,0 +1,17 @@
+{
+  "ffmpeg": {
+    "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-linuxarm64-lgpl-shared-9.0.tar.xz",
+    "sha256": "4ef690828b307aaf9df28cc05744ca41f8107841a06566db1544380f3d3a5499",
+    "archive": "ffmpeg-arm64.tar.xz"
+  },
+  "yt-dlp": {
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp_linux_aarch64",
+    "sha256": "e87e9533e89fe5889abaa21f5114dfe7756d6aa6219b83551add04d48b18e483",
+    "archive": "yt-dlp_linux_aarch64"
+  },
+  "deno": {
+    "url": "https://github.com/denoland/deno/releases/download/v2.9.8/deno-aarch64-unknown-linux-gnu.zip",
+    "sha256": "d49596c20b9788cf8f5d8ddf644103d4bde56ed239753f0bdb92ba9361d51905",
+    "archive": "deno-arm64.zip"
+  }
+}
