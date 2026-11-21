@@ -4,6 +4,11 @@ Port autonomo di Rambutan Music Player per Ubuntu Touch 24.04 ARM64. Il codice
 deriva da Rambutan 0.1.0-beta.11; la provenienza è in [UPSTREAM.md](UPSTREAM.md).
 Non occorrono né la cartella originale `Rambutan` né i sorgenti di UTDotNet.
 
+La **0.1.11 ARM64** è disponibile su
+[OpenStore](https://open-store.io/app/rambutan.milattanzio/).
+Le verifiche e gli artefatti della pubblicazione sono documentati in
+[docs/openstore-publication.md](docs/openstore-publication.md).
+
 L'interfaccia usa **AXAML**, binding compilati e i view model originali. La finestra
 del telefono offre Home, ricerca, libreria, coda, player e impostazioni essenziali.
 Il motore conserva catalogo YouTube Music, risoluzione degli stream, decodifica,

@@ -1,3 +1,11 @@
+ARCHIVED DRAFT — NEVER SENT.
+Superseded by the Qt 5 browser port and the successful publication of Rambutan
+0.1.11 on 22 November 2026 (Europe/Rome). No manual review is pending.
+Published app: https://open-store.io/app/rambutan.milattanzio/
+See docs/openstore-publication.md for the final release details.
+
+Original 0.1.9 draft follows for historical context:
+
 Hello OpenStore maintainers,
 
 I would like to request guidance/manual review for Rambutan 0.1.9, package rambutan.milattanzio, ARM64, framework ubuntu-touch-24.04-2.x.
