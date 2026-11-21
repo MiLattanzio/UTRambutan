@@ -1,7 +1,7 @@
 {
   "name": "rambutan.milattanzio",
   "title": "Rambutan",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Rambutan Music Player per Ubuntu Touch, Avalonia e UTDotNet",
   "maintainer": "Mi <mi@polecola.it>",
   "architecture": "arm64",

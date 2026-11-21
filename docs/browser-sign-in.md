@@ -1,4 +1,4 @@
-# Accesso dal browser — 0.1.10
+# Accesso dal browser — 0.1.11
 
 Il dialogo AXAML offre un pulsante per aprire YouTube Music in un componente
 Qt WebEngine 5.15 incorporato nella stessa finestra. L'utente completa personalmente accesso e
@@ -128,8 +128,8 @@ all'approvazione OpenStore.
   `2154e8c173c4901538a7c1dbe292da388b0992faa88b9366feac336b9314e6a9`.
 - Il validatore locale non segnala più Qt troppo recente. Rimane l'assenza
   della policy `ubuntu/2404.2` nel validatore locale; non equivale a una review
-  OpenStore riuscita. Pubblicazione e screenshot per lo store sono sospesi
-  durante la verifica del browser.
+  OpenStore riuscita. La revisione automatica sul server OpenStore ha invece
+  accettato il Click 0.1.10 con Qt 5 il 22 novembre 2026.
 - Accesso Google e importazione automatica con Qt 5: riusciti, confermati
   dall'utente e dai log del 21 novembre alle 23:27:19–23:27:22 UTC (22 novembre,
   00:27 locali). Sessione `Valid`, consegna e accettazione nel dialogo,
@@ -140,3 +140,23 @@ all'approvazione OpenStore.
 
 Log di build: `artifacts/verification/browser-qt5-layout-click.log` e
 `artifacts/verification/browser-qt5-production-build.log` (esclusi da Git).
+
+## Ripristino del layout dopo la ricerca — 0.1.11
+
+Durante le catture per lo store è stato riprodotto un problema distinto dal
+browser: lasciando il campo di ricerca per aprire un album, il suo contesto
+Maliit poteva non consegnare l'ultima area vuota. La finestra conservava spazio
+per una tastiera ormai chiusa e nascondeva la navigazione.
+
+`PhoneInput` ricalcola ora il layout dopo focus, perdita del focus e rimozione
+del campo. Applica lo spazio riservato solo quando la finestra ha un editor
+visibile con focus; conserva l'ultima area per il passaggio fra due campi.
+Sul Fairphone 5 sono stati ripetuti ricerca con Maliit e apertura dell'album:
+la finestra e la barra di navigazione tornano alla dimensione completa.
+Gli 8 test `UbuntuTouchTests` passano dopo una ricompilazione completa degli
+AXAML (il primo tentativo incrementale aveva risorse precompilate mancanti).
+Build Release: zero avvisi e zero errori. Log in
+`artifacts/verification/keyboard-test-rebuild.log` e `keyboard-release-tests.log`.
+
+Il browser Qt 5 è invariato rispetto alla build verificata con l'accesso Google.
+Click 0.1.11: `8924475a3d1cd2586570d481db6ecc0906f56651559579d1243aefca83852dab`.

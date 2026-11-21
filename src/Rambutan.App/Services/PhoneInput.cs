@@ -131,8 +131,14 @@ public sealed class PhoneInput : AvaloniaObject
             EnsureClipboard();
             window.Opened += OnOpened;
             field.GotFocus += OnFocus;
+            field.LostFocus += OnBlur;
         }
-        private void OnFocus(object? sender, FocusChangedEventArgs e) => BringFocusedIntoView();
+        private void OnFocus(object? sender, FocusChangedEventArgs e)
+        {
+            RefreshWindowLayout(_window);
+            BringFocusedIntoView();
+        }
+        private void OnBlur(object? sender, RoutedEventArgs e) => RefreshWindowLayout(_window);
         private void OnOpened(object? sender, EventArgs e) => EnsureClipboard();
         private void EnsureClipboard()
         {
@@ -142,13 +148,20 @@ public sealed class PhoneInput : AvaloniaObject
         public void Dispose()
         {
             _field.GotFocus -= OnFocus;
+            _field.LostFocus -= OnBlur;
             _window.Opened -= OnOpened;
             _clipboard?.Dispose();
             _menu.Dispose();
             _registration.Dispose();
             _adapter.Dispose();
+            RefreshWindowLayout(_window);
         }
     }
+
+    private static void RefreshWindowLayout(Window window) => Dispatcher.UIThread.Post(() =>
+    {
+        if (Windows.TryGetValue(window, out var lifetime)) lifetime.ApplyInset();
+    }, DispatcherPriority.Loaded);
 
     private static void BringFocusedIntoView() => Dispatcher.UIThread.Post(() =>
     {
@@ -175,11 +188,16 @@ public sealed class PhoneInput : AvaloniaObject
         public void SetArea(InputArea area) { _area = area; ApplyInset(); }
         private void OnSize(object? sender, SizeChangedEventArgs e) => ApplyInset();
         private void OnPosition(object? sender, PixelPointEventArgs e) => ApplyInset();
-        private void ApplyInset()
+        public void ApplyInset()
         {
             if (_disposed || _root is null) return;
+            // A detached editor may stop receiving Maliit's final empty area.
+            // Reserve space only while this window still has a focused editor.
+            // Keep the last area so switching fields does not lose the inset.
+            var editing = Fields.Keys.Any(field => field.IsFocused && field.IsEffectivelyVisible &&
+                TopLevel.GetTopLevel(field) == _window);
             var inset = 0d;
-            if (_area.Width > 0 && _area.Height > 0)
+            if (editing && _area.Width > 0 && _area.Height > 0)
             {
                 var viewport = new PixelRect(_window.PointToScreen(default),
                     PixelSize.FromSize(_window.ClientSize, _window.RenderScaling));
@@ -188,7 +206,7 @@ public sealed class PhoneInput : AvaloniaObject
             _root.Margin = new(_margin.Left, _margin.Top, _margin.Right, _margin.Bottom + inset);
             // A compositor may already have shrunk the client: the inset is then
             // zero, but accessory chrome still needs to yield space to the editor.
-            _window.Classes.Set("keyboard", _area.Width > 0 && _area.Height > 0);
+            _window.Classes.Set("keyboard", editing && _area.Width > 0 && _area.Height > 0);
             BringFocusedIntoView();
         }
         private void OnClosed(object? sender, EventArgs e)

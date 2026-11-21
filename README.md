@@ -50,7 +50,7 @@ scripts/install-click.sh SERIAL_ADB
 Il primo comando pubblica `linux-arm64` self-contained, **senza trimming, AOT o
 single-file**, verifica gli SHA-256 delle dipendenze native e costruisce:
 
-`artifacts/click/rambutan.milattanzio_0.1.10_arm64.click`
+`artifacts/click/rambutan.milattanzio_0.1.11_arm64.click`
 
 FFmpeg 9.0.2, yt-dlp 2026.10.26 e Deno 2.9.8 sono inclusi; versioni, URL e hash
 sono in `packaging/native-tools.json`. Sul telefono non si installano SDK o
@@ -72,7 +72,7 @@ sull'icona relativa richiesta dal formato Click è conservato; altri errori
 desktop interrompono il build.
 
 Aprire **Rambutan** dal launcher Lomiri. Per un avvio CLI usare l'ambiente della
-sessione effettiva e l'ID `rambutan.milattanzio_rambutan_0.1.10`; non fissare UID,
+sessione effettiva e l'ID `rambutan.milattanzio_rambutan_0.1.11`; non fissare UID,
 display o seriale di un altro telefono nel launcher distribuito.
 
 ## Integrazione Ubuntu Touch
