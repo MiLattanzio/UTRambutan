@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font:18px sans-serif;background:#fafafa;color:#181818;margin:20px;padding-top:55px;padding-bottom:50px}input{display:block;box-sizing:border-box;width:100%;font-size:22px;padding:14px;margin:8px 0 40px}nav{position:fixed;top:0;left:0;right:0;background:#dce9ff;padding:8px;z-index:2}button{font-size:18px;padding:12px}#status{position:fixed;bottom:0;left:0;right:0;background:#e0ffdf;padding:6px;font:13px monospace;pointer-events:none}section{margin-top:380px}</style></head>
+<body><nav><button onclick="document.getElementById('top').focus()">Top</button> <button onclick="document.getElementById('password').focus()">Password</button> <button onclick="document.getElementById('bottom').focus()">Bottom</button></nav>
+<p>Rambutan keyboard test — synthetic input only.</p>
+<label>Top field<input id="top" autocomplete="off"></label>
+<section><label>Password test<input id="password" type="password" autocomplete="off"></label></section>
+<section><label>Bottom field<input id="bottom" autocomplete="off"></label></section>
+<div id="status"></div><script>
+setInterval(() => {const e=document.activeElement;const r=e?.getBoundingClientRect();document.getElementById('status').textContent='viewport='+innerHeight+' field='+e?.id+' top='+Math.round(r?.top||0)+' bottom='+Math.round(r?.bottom||0)+' visible='+(r && r.top>=0 && r.bottom<=innerHeight);},150);
+</script></body></html>
