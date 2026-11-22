@@ -1,4 +1,36 @@
-# Rambutan 0.1.11 pubblicata su OpenStore
+# Pubblicazioni Rambutan su OpenStore
+
+## Versione 0.1.12
+
+La **0.1.12 ARM64** è pubblicata e disponibile nella
+[scheda OpenStore](https://open-store.io/app/rambutan.milattanzio/).
+Confermata il **22 novembre 2026**; la gestione OpenStore riporta
+l'aggiornamento del pacchetto alle **20:04:26 Europe/Rome**.
+La scheda pubblica mostra `Current Version 0.1.12`, architettura `arm64`,
+le nuove note della release e il permesso `Content Exchange`.
+
+- Click: `artifacts/click/rambutan.milattanzio_0.1.12_arm64.click`.
+- Dimensione: 204173684 byte.
+- SHA-256: `9914f042c64e4794d2a2e19d758adf1044b6490952df7c573f7f93acf1ac9a9c`.
+- [Sorgenti della release](https://github.com/MiLattanzio/UTRambutan/commit/1f11df01668a67c2b18f408f8ed7d77b3cfe668a).
+- Changelog e descrizione: `packaging/openstore/listing.json`.
+- Prova visiva della scheda pubblica:
+  `artifacts/publication/openstore-0.1.12-published.jpg`.
+
+È lo stesso pacchetto verificato sul Fairphone 5: dialoghi contenuti nello
+schermo con chiusura accessibile, importazione tramite Content Hub e Gestore file,
+barra della libreria e anteprima Spotify adattate al telefono. Gli 82 test mirati
+passano; dettagli in [phone-dialogs-and-import.md](phone-dialogs-and-import.md).
+Il server OpenStore ha accettato l'aggiornamento. L'errore del vecchio validatore
+locale, che non conosce la policy 2404.2, non ha bloccato la pubblicazione.
+
+La descrizione ora spiega che Content Hub trasferisce il file playlist e che gli
+M3U locali richiedono percorsi assoluti a brani già accessibili all'app. I tre
+screenshot della 0.1.11 restano nella scheda: riproduzione, coda e ricerca.
+
+---
+
+## Storico: Rambutan 0.1.11
 
 La versione **0.1.11 ARM64** è pubblicata e disponibile nella
 [scheda pubblica OpenStore](https://open-store.io/app/rambutan.milattanzio/).

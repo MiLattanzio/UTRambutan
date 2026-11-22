@@ -65,8 +65,10 @@ Prove visive e log in `artifacts/verification/dialog-contenthub/`,
 Il pacchetto è `artifacts/click/rambutan.milattanzio_0.1.12_arm64.click`;
 lo SHA-256 è in `artifacts/click/SHA256SUMS`. Il controllo locale Click già noto
 non riconosce la policy 2404.2: non equivale a una revisione OpenStore superata.
-Questa versione viene installata sul telefono di prova; la pubblicazione
-OpenStore documentata separatamente resta la 0.1.11.
+La 0.1.12 è stata pubblicata su OpenStore il 22 novembre 2026, dopo la prova
+sul Fairphone 5. La scheda pubblica mostra versione 0.1.12, architettura arm64,
+changelog aggiornato e permesso Content Exchange. Vedere
+[openstore-publication.md](openstore-publication.md).
 
 SHA-256 del Click verificato: `9914f042c64e4794d2a2e19d758adf1044b6490952df7c573f7f93acf1ac9a9c`.
 L'assembly installato sul Fairphone coincide con quello pubblicato in
