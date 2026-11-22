@@ -105,6 +105,8 @@ public partial class LibraryPage : UserControl
         if (_vm is not null)
             _vm.PickPlaylistFile = async () =>
             {
+                if (Services.UbuntuTouchPlatform.IsUbuntuTouch && TopLevel.GetTopLevel(this) is Window owner)
+                    return await new FileImportDialog(Strings.Get("library.local.importPickTitle")).ShowDialog<PickedFile?>(owner);
                 if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
                     return null;
                 var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions

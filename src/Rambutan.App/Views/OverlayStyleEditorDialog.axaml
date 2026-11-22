@@ -54,6 +54,7 @@
   <!-- The OBS overlay's style editor: the fields on the left, a native
        preview of the browser source on the right. Every edit reaches open
        overlays at once; Save keeps it. -->
+  <controls:DialogFrame>
   <Border>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
   <Grid RowDefinitions="Auto,*,Auto" Margin="20">
@@ -299,4 +300,5 @@
   </Grid>
   </ScrollViewer>
   </Border>
+  </controls:DialogFrame>
 </Window>

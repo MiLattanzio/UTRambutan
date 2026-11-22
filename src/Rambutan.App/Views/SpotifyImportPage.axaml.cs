@@ -16,6 +16,8 @@ public partial class SpotifyImportPage : UserControl
             return;
         vm.PickFile = async () =>
         {
+            if (Services.UbuntuTouchPlatform.IsUbuntuTouch && TopLevel.GetTopLevel(this) is Window owner)
+                return await new FileImportDialog(Strings.Get("import.pickTitle")).ShowDialog<PickedFile?>(owner);
             if (TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
                 return null;
             var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions

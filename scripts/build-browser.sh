@@ -21,3 +21,4 @@ docker run --rm --user "$(id -u):$(id -g)" \
   dpkg-query -W qtbase5-dev:arm64 qtwebengine5-dev:arm64 > artifacts/native-browser/qt-versions.txt
   '
 cp artifacts/native-browser/build-qt5/rambutan-browser artifacts/native-browser/
+cp artifacts/native-browser/build-qt5/rambutan-file-picker artifacts/native-browser/

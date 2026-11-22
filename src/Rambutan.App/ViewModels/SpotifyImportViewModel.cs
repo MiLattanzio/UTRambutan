@@ -296,8 +296,9 @@ public sealed partial class SpotifyImportViewModel : ViewModelBase
     [RelayCommand]
     private async Task ChooseFileAsync()
     {
-        if (PickFile is null || IsBusy || await PickFile() is not { } picked)
-            return;
+        if (PickFile is null || IsBusy) return;
+        using var picked = await PickFile();
+        if (picked is null) return;
         if (picked.LocalPath is not { } path)
         {
             Problem = Strings.Get("import.problem.notLocal");

@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Rambutan.App.Controls"
         xmlns:l="using:Rambutan.App.Localization"
         xmlns:core="using:Rambutan.Core.Models"
         xmlns:pl="using:Rambutan.Core.Playlists"
@@ -9,8 +10,8 @@
         WindowStartupLocation="CenterOwner"
         Background="#FF16161C">
 
+  <controls:DialogFrame>
   <Border>
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
   <Grid RowDefinitions="Auto,*,Auto" Margin="20">
     <TextBlock Grid.Row="0" Text="{l:T dialog.pickPlaylist.heading}" FontSize="15" FontWeight="SemiBold"
                Margin="0,0,0,10" />
@@ -73,6 +74,6 @@
       <Button Content="{l:T common.add}" Classes="accent" Click="OnAdd" />
     </StackPanel>
   </Grid>
-  </ScrollViewer>
   </Border>
+  </controls:DialogFrame>
 </Window>

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:phone="using:Rambutan.App.Services"
              xmlns:l="using:Rambutan.App.Localization"
              xmlns:vm="using:Rambutan.App.ViewModels"
              xmlns:controls="using:Rambutan.App.Controls"
@@ -12,7 +13,27 @@
              x:DataType="vm:LibraryPageViewModel">
 
   <Grid RowDefinitions="Auto,Auto,*,Auto">
-    <controls:ActionRow Grid.Row="0" Spacing="10" Margin="4,0,16,8" MoreClasses="icon subtle">
+    <StackPanel Grid.Row="0" Spacing="8" Margin="4,0,4,8"
+                IsVisible="{x:Static phone:UbuntuTouchPlatform.UsePhoneLayout}">
+      <TextBlock Text="{l:T library.title}" FontSize="24" FontWeight="Bold" />
+      <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}" HorizontalAlignment="Stretch"
+                IsVisible="{Binding HasSources}" AutomationProperties.Name="{l:T library.source.name}">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:LibrarySource">
+          <TextBlock Text="{Binding Converter={x:Static vm:Converters.LibrarySourceName}}" TextTrimming="CharacterEllipsis" />
+        </DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+      <WrapPanel Orientation="Horizontal">
+        <Button Content="{l:T library.newPlaylist}" Command="{Binding NewPlaylistCommand}" Margin="0,0,8,4">
+          <Button.IsVisible><MultiBinding Converter="{x:Static BoolConverters.And}">
+            <Binding Path="IsYouTubeMusic" /><Binding Path="IsPlaylists" /><Binding Path="!SelectedSection.NeedsSignIn" />
+          </MultiBinding></Button.IsVisible>
+        </Button>
+        <Button Content="{l:T library.importSpotify}" Command="{Binding ImportFromSpotifyCommand}"
+                IsVisible="{Binding ShowsSpotifyImport}" Margin="0,0,8,4" />
+      </WrapPanel>
+    </StackPanel>
+    <controls:ActionRow Grid.Row="0" Spacing="10" Margin="4,0,16,8" MoreClasses="icon subtle"
+                       IsVisible="{Binding Source={x:Static phone:UbuntuTouchPlatform.UsePhoneLayout}, Converter={x:Static BoolConverters.Not}}">
       <TextBlock controls:ActionRow.Keep="True" Text="{l:T library.title}" FontSize="{StaticResource Token.Font.Page}" FontWeight="ExtraBold" VerticalAlignment="Center" />
       <!-- The two sources, in view; shown signed out too, so the files stay reachable. -->
       <ListBox Classes="segmented" controls:ActionRow.Keep="True" VerticalAlignment="Center" HorizontalAlignment="Left"

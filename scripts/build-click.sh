@@ -2,13 +2,24 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export NUGET_PACKAGES="${NUGET_PACKAGES:-$PWD/.nuget/packages}"
-dotnet publish src/Rambutan.App/Rambutan.App.csproj -c Release -r linux-arm64 \
+# Avalonia's incremental cross-publish can reuse the assembly before XAML weaving.
+# Rebuild serially, then publish that exact output without compiling it again.
+dotnet build src/Rambutan.App/Rambutan.App.csproj -t:Rebuild -c Release -r linux-arm64 \
+  -p:SelfContained=true -p:PublishAot=false -p:PublishTrimmed=false -p:PublishSingleFile=false \
+  -p:RestoreLockedMode=true -m:1
+dotnet publish src/Rambutan.App/Rambutan.App.csproj -c Release -r linux-arm64 --no-build --no-restore \
   --self-contained true -p:PublishAot=false -p:PublishTrimmed=false -p:PublishSingleFile=false \
-  -p:RestoreLockedMode=true -o artifacts/linux-arm64
+  -p:RestoreLockedMode=true -m:1 -o artifacts/linux-arm64
+python3 - <<'CHECK'
+from pathlib import Path
+if b'CompiledAvaloniaXaml' not in Path('artifacts/linux-arm64/Rambutan.App.dll').read_bytes():
+    raise SystemExit('ARM64 assembly has no compiled AXAML; refusing to package it.')
+CHECK
 python3 scripts/prepare-native.py
 scripts/build-browser.sh
 mkdir -p artifacts/native-tools/browser
 cp artifacts/native-browser/rambutan-browser artifacts/native-tools/browser/
+cp artifacts/native-browser/rambutan-file-picker artifacts/native-tools/browser/
 if [[ "${RAMBUTAN_BROWSER_INPUT_TEST:-0}" == 1 ]]; then
   cp artifacts/native-browser/build-qt5/rambutan-browser-input-test artifacts/native-tools/browser/rambutan-browser
 fi

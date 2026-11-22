@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="using:Rambutan.App.Localization"
+             x:Class="Rambutan.App.Controls.DialogFrame" x:Name="Frame">
+  <UserControl.Content>
+  <Grid RowDefinitions="Auto,*" ClipToBounds="True">
+    <Grid x:Name="DialogHeader" ColumnDefinitions="*,Auto" Margin="16,4">
+      <TextBlock Text="{ReflectionBinding $parent[Window].Title}" FontSize="20"
+                 FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+      <Button Grid.Column="1" Click="OnClose" AutomationProperties.Name="{l:T common.close}"
+              MinWidth="48" MinHeight="48" Margin="8,0,0,0">
+        <PathIcon Data="{StaticResource Icon.Close}" Width="20" Height="20" />
+      </Button>
+    </Grid>
+    <ContentPresenter Grid.Row="1" Content="{ReflectionBinding #Frame.Body}"
+                      HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+  </Grid>
+  </UserControl.Content>
+</UserControl>

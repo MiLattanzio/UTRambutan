@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Rambutan.App.Controls"
         xmlns:l="using:Rambutan.App.Localization"
         xmlns:vm="using:Rambutan.App.ViewModels"
         x:Class="Rambutan.App.Views.ProfilesDialog"
@@ -12,6 +13,7 @@
 
   <!-- Profiles: every profile is its own data folder. Switching restarts
        the app into the chosen one, and the dialog says so before anything is clicked. -->
+  <controls:DialogFrame>
   <Border>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
   <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="20">
@@ -67,4 +69,5 @@
   </Grid>
   </ScrollViewer>
   </Border>
+  </controls:DialogFrame>
 </Window>

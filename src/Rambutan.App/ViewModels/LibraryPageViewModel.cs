@@ -316,8 +316,8 @@ public partial class LibraryPageViewModel : ViewModelBase, ITrackMenuHost
             _actions.ReportError(TrackActionsViewModel.ReadOnlyNote(library));
             return;
         }
-        if (await PickPlaylistFile() is not { } picked)
-            return;
+        using var picked = await PickPlaylistFile();
+        if (picked is null) return;
         if (picked.LocalPath is not { } path)
         {
             _actions.ReportError(Strings.Get("toast.localPlaylist.importNotLocal"));
@@ -327,6 +327,7 @@ public partial class LibraryPageViewModel : ViewModelBase, ITrackMenuHost
         IsImportingPlaylist = true;
         try
         {
+            if (picked.IsTemporary) await ValidateTransferredPlaylistAsync(path);
             var read = await M3uPlaylistFiles.ReadAsync(local.Scans.Index, path);
             var elsewhere = read.OnOtherComputers > 0
                 ? " " + Strings.Format("toast.localPlaylist.importOtherComputers", ("count", read.OnOtherComputers))
@@ -360,6 +361,19 @@ public partial class LibraryPageViewModel : ViewModelBase, ITrackMenuHost
         {
             IsImportingPlaylist = false;
         }
+    }
+
+    internal static async Task ValidateTransferredPlaylistAsync(string path)
+    {
+        // Content Hub copies the selected playlist, not its original folder or
+        // neighbouring audio. Never remember relative tracks under a scratch
+        // directory which will disappear as soon as the import finishes.
+        if (new System.IO.FileInfo(path).Length > M3uPlaylistFiles.MaxBytes)
+            throw new System.IO.InvalidDataException("Too large for a playlist.");
+        var text = Rambutan.Core.Text.FileText.Decode(await System.IO.File.ReadAllBytesAsync(path));
+        if (M3u.Parse(text).Any(entry => !System.IO.Path.IsPathFullyQualified(entry.Location) &&
+            !Uri.TryCreate(entry.Location, UriKind.Absolute, out _)))
+            throw new System.IO.InvalidDataException("This playlist uses relative file paths. On Ubuntu Touch, use absolute paths to audio files already available to Rambutan.");
     }
 
     [RelayCommand]

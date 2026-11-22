@@ -4,44 +4,86 @@
              xmlns:vm="using:Rambutan.App.ViewModels"
              xmlns:core="using:Rambutan.Core.Models"
              xmlns:controls="using:Rambutan.App.Controls"
+             xmlns:phone="using:Rambutan.App.Services"
              x:Class="Rambutan.App.Views.SpotifyImportPage"
              x:Name="Root"
              x:DataType="vm:SpotifyImportViewModel">
 
+  <UserControl.Styles>
+    <Style Selector="ScrollViewer#importScroll">
+      <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+    </Style>
+    <Style Selector="DockPanel#importSongs">
+      <Setter Property="Grid.Column" Value="1" />
+    </Style>
+    <Style Selector="TextBox#importLinks">
+      <Setter Property="MinWidth" Value="420" />
+    </Style>
+    <Style Selector="DockPanel.importOutcome">
+      <Setter Property="Grid.Column" Value="1" />
+    </Style>
+    <Style Selector="StackPanel.importActions">
+      <Setter Property="Grid.Column" Value="2" />
+    </Style>
+    <Style Selector="Window.phone ScrollViewer#importScroll">
+      <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
+    <Style Selector="Window.phone DockPanel#importSongs">
+      <Setter Property="Grid.Column" Value="0" />
+      <Setter Property="Grid.Row" Value="1" />
+      <Setter Property="Margin" Value="0,16,0,0" />
+    </Style>
+    <Style Selector="Window.phone TextBox#importLinks">
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Window.phone ListBox.importList">
+      <Setter Property="MaxHeight" Value="360" />
+    </Style>
+    <Style Selector="Window.phone DockPanel.importOutcome">
+      <Setter Property="Grid.Column" Value="0" />
+      <Setter Property="Grid.Row" Value="1" />
+      <Setter Property="Margin" Value="0,4" />
+    </Style>
+    <Style Selector="Window.phone StackPanel.importActions">
+      <Setter Property="Grid.Column" Value="0" />
+      <Setter Property="Grid.Row" Value="2" />
+    </Style>
+  </UserControl.Styles>
+  <ScrollViewer x:Name="importScroll" HorizontalScrollBarVisibility="Disabled">
   <!-- Choose a file, then its lists on the left and the chosen list's songs
        on the right. Nothing is created until the Import button. -->
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="{phone:PhoneRows Phone='Auto,Auto', Desktop='Auto,*'}">
     <StackPanel Grid.Row="0" Spacing="6" Margin="4,0,16,16">
       <!-- Experimental: Spotify can change its export or its pages at any time. -->
-      <StackPanel Orientation="Horizontal" Spacing="14">
+      <WrapPanel Orientation="Horizontal">
         <TextBlock Text="{l:T import.title}" FontSize="{StaticResource Token.Font.Page}" FontWeight="ExtraBold"
-                   VerticalAlignment="Center" />
+                   VerticalAlignment="Center" Margin="0,0,14,0" />
         <Border BorderBrush="{StaticResource Token.Brush.Text.Muted}" BorderThickness="1" CornerRadius="999"
                 Padding="10,2" VerticalAlignment="Center" ToolTip.Tip="{l:T import.experimentalTip}">
           <TextBlock Classes="rowmeta" Text="{l:T import.experimental}"
                      AutomationProperties.HelpText="{l:T import.experimentalTip}" />
         </Border>
-      </StackPanel>
+      </WrapPanel>
       <TextBlock Classes="headersummary" Text="{l:T import.intro}" TextWrapping="Wrap" MaxWidth="760"
                  HorizontalAlignment="Left" />
       <TextBlock Classes="headermeta" Text="{l:T import.sent}" TextWrapping="Wrap" MaxWidth="760"
                  HorizontalAlignment="Left" />
-      <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
+      <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
         <Button Command="{Binding ChooseFileCommand}" IsEnabled="{Binding !IsBusy}" FontWeight="SemiBold"
-                Content="{Binding ChooseFileText}" />
-        <TextBlock Classes="headermeta" Text="{Binding FileName}" VerticalAlignment="Center"
+                Content="{Binding ChooseFileText}" Margin="0,0,12,6" />
+        <TextBlock Classes="headermeta" Text="{Binding FileName}" VerticalAlignment="Center" TextWrapping="Wrap"
                    IsVisible="{Binding FileName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         <ProgressBar IsIndeterminate="True" Width="80" VerticalAlignment="Center"
                      AutomationProperties.Name="{l:T common.loading}"
                      IsVisible="{Binding IsReadingFile}" />
-      </StackPanel>
+      </WrapPanel>
       <!-- Share links: a request to Spotify, sent only on Read links. -->
       <StackPanel Spacing="6" Margin="0,8,0,0" IsVisible="{Binding CanReadLinks}">
         <TextBlock Classes="rowtitle" Text="{l:T import.link.label}" />
         <DockPanel MaxWidth="760" HorizontalAlignment="Left">
           <Button DockPanel.Dock="Right" Margin="12,0,0,0" FontWeight="SemiBold" Content="{l:T import.link.read}"
                   Command="{Binding ReadLinksCommand}" IsEnabled="{Binding !IsBusy}" VerticalAlignment="Top" />
-          <TextBox Text="{Binding LinkText}" PlaceholderText="{l:T import.link.placeholder}" MinWidth="420"
+          <TextBox x:Name="importLinks" Text="{Binding LinkText}" PlaceholderText="{l:T import.link.placeholder}"
                    AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="120"
                    AutomationProperties.Name="{l:T import.link.label}"
                    AutomationProperties.HelpText="{l:T import.link.sent}" />
@@ -79,7 +121,8 @@
                  IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>
 
-    <Grid Grid.Row="1" ColumnDefinitions="340,*" IsVisible="{Binding IsReady}" Margin="4,0,16,0">
+    <Grid Grid.Row="1" ColumnDefinitions="{phone:PhoneColumns Phone='*', Desktop='340,*'}"
+          RowDefinitions="{phone:PhoneRows Phone='Auto,Auto', Desktop='*'}" IsVisible="{Binding IsReady}" Margin="4,0,16,0">
       <!-- The lists, where they go, and the two steps. -->
       <DockPanel Grid.Column="0" Margin="0,0,20,0">
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12">
@@ -124,7 +167,7 @@
                      IsVisible="{Binding Result, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
 
-        <ListBox Classes="tracks" Background="Transparent" ItemsSource="{Binding Lists}"
+        <ListBox Classes="tracks importList" Background="Transparent" ItemsSource="{Binding Lists}"
                  SelectedItem="{Binding SelectedList}"
                  AutomationProperties.Name="{l:T import.listsName}">
           <ListBox.Styles>
@@ -155,7 +198,7 @@
       </DockPanel>
 
       <!-- The selected list's songs: what each adds, and the changes. -->
-      <DockPanel Grid.Column="1" IsVisible="{Binding HasSelectedList}">
+      <DockPanel x:Name="importSongs" IsVisible="{Binding HasSelectedList}">
         <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
           <TextBlock Classes="herotitle" FontSize="{StaticResource Token.Font.Section}"
                      Text="{Binding SelectedList.DisplayName, FallbackValue={x:Null}}" />
@@ -164,7 +207,7 @@
         <TextBlock DockPanel.Dock="Top" Classes="rowmeta" Text="{Binding NoRowsText}" Margin="0,8,0,0"
                    TextWrapping="Wrap"
                    IsVisible="{Binding NoRowsText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <ListBox Classes="tracks pagescroll" Background="Transparent" ItemsSource="{Binding Rows}"
+        <ListBox Classes="tracks pagescroll importList" Background="Transparent" ItemsSource="{Binding Rows}"
                  AutomationProperties.Name="{l:T import.rowsName}">
           <ListBox.Styles>
             <Style Selector="ListBoxItem" x:DataType="vm:ImportRowItem">
@@ -177,19 +220,20 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:ImportRowItem">
               <StackPanel Margin="0,2" Spacing="6">
-                <Grid ColumnDefinitions="*,*,Auto">
+                <Grid ColumnDefinitions="{phone:PhoneColumns Phone='*', Desktop='*,*,Auto'}"
+                      RowDefinitions="{phone:PhoneRows Phone='Auto,Auto,Auto', Desktop='*'}">
                   <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Classes="rowtitle" Text="{Binding SourceTitle}" />
                     <TextBlock Classes="rowmeta" Text="{Binding SourceArtist}" />
                   </StackPanel>
-                  <DockPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0"
+                  <DockPanel Classes="importOutcome" VerticalAlignment="Center"
                              Classes.nothing="{Binding !HasSong}">
                     <PathIcon DockPanel.Dock="Left" Data="{StaticResource Icon.Warning}" Width="16" Height="16"
                               Margin="0,0,8,0" IsVisible="{Binding !HasSong}" />
                     <TextBlock Classes="rowmeta" Text="{Binding Outcome}" TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" ToolTip.Tip="{Binding Outcome}" />
                   </DockPanel>
-                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                  <StackPanel Classes="importActions" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                               IsEnabled="{Binding #Root.((vm:SpotifyImportViewModel)DataContext).CanStartWork}">
                     <Button Classes="subtle small" Command="{Binding ChooseAnotherCommand}"
                             Content="{Binding ChooseText}" />
@@ -237,4 +281,5 @@
       </DockPanel>
     </Grid>
   </Grid>
+  </ScrollViewer>
 </UserControl>

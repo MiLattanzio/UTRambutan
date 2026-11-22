@@ -9,6 +9,10 @@ La **0.1.11 ARM64** è disponibile su
 Le verifiche e gli artefatti della pubblicazione sono documentati in
 [docs/openstore-publication.md](docs/openstore-publication.md).
 
+La **0.1.12** aggiunge dialoghi adattati allo schermo del telefono e importazione
+tramite il selettore nativo Content Hub. Verifiche sul Fairphone 5:
+[docs/phone-dialogs-and-import.md](docs/phone-dialogs-and-import.md).
+
 L'interfaccia usa **AXAML**, binding compilati e i view model originali. La finestra
 del telefono offre Home, ricerca, libreria, coda, player e impostazioni essenziali.
 Il motore conserva catalogo YouTube Music, risoluzione degli stream, decodifica,
@@ -55,7 +59,7 @@ scripts/install-click.sh SERIAL_ADB
 Il primo comando pubblica `linux-arm64` self-contained, **senza trimming, AOT o
 single-file**, verifica gli SHA-256 delle dipendenze native e costruisce:
 
-`artifacts/click/rambutan.milattanzio_0.1.11_arm64.click`
+`artifacts/click/rambutan.milattanzio_0.1.12_arm64.click`
 
 FFmpeg 9.0.2, yt-dlp 2026.10.26 e Deno 2.9.8 sono inclusi; versioni, URL e hash
 sono in `packaging/native-tools.json`. Sul telefono non si installano SDK o
@@ -65,7 +69,9 @@ aggiornati con il Click. Il componente di accesso viene compilato con
 preparata automaticamente dal Dockerfile in `tools/Rambutan.Browser`.
 Usa Qt WebEngine 5.15 fornito dal sistema Ubuntu Touch; non incorpora un'altra copia
 del motore. Le versioni Qt del build sono in `artifacts/native-browser/qt-versions.txt`.
-L'app richiede i gruppi AppArmor standard `networking`, `audio` e `webview`,
+Il selettore file usa un secondo componente Qt 5 con `Lomiri.Content`, senza
+avviare WebEngine. L'app richiede i gruppi AppArmor standard `networking`,
+`audio`, `webview` e `content_exchange`,
 con policy `2404.2` e framework `ubuntu-touch-24.04-2.x`.
 
 Il build conserva il risultato completo della review e ne restituisce il codice
@@ -77,7 +83,7 @@ sull'icona relativa richiesta dal formato Click è conservato; altri errori
 desktop interrompono il build.
 
 Aprire **Rambutan** dal launcher Lomiri. Per un avvio CLI usare l'ambiente della
-sessione effettiva e l'ID `rambutan.milattanzio_rambutan_0.1.11`; non fissare UID,
+sessione effettiva e l'ID `rambutan.milattanzio_rambutan_0.1.12`; non fissare UID,
 display o seriale di un altro telefono nel launcher distribuito.
 
 ## Integrazione Ubuntu Touch
@@ -136,8 +142,10 @@ di nuovi URL e l'estensione radio richiedono che l'app sia eseguibile; una coda
 ancora in preparazione o URL YouTube scaduti possono richiedere di riaprire l'app.
 `Native queue ready` nel log indica il completamento del trasferimento. Le prove
 non certificano sessioni di molte ore, chiamate, Bluetooth o consumo energetico.
-Content Hub e l'accesso ai file esterni al sandbox restano da integrare. I comandi
-D-Bus nativi sono verificati; titolo, artista e copertina vengono incorporati
+Content Hub permette di importare i file playlist selezionati nel Gestore file.
+Non concede accesso generale alle cartelle esterne al sandbox né trasferisce
+automaticamente i brani indicati da un M3U. I comandi D-Bus nativi sono verificati;
+titolo, artista e copertina vengono incorporati
 nei file preparati per il player nativo. Vedere [docs/native-metadata.md](docs/native-metadata.md).
 
 La 0.1.6 riduce l'attesa dei brani non in cache con un primo tentativo di

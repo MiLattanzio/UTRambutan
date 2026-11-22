@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Rambutan.App.Controls"
         xmlns:l="using:Rambutan.App.Localization"
         xmlns:input="using:Avalonia.Input.TextInput"
         xmlns:vm="using:Rambutan.App.ViewModels"
@@ -11,6 +12,7 @@
         WindowStartupLocation="CenterOwner"
         Background="#FF16161C">
 
+  <controls:DialogFrame>
   <Border>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
   <StackPanel Margin="20" Spacing="14">
@@ -157,4 +159,5 @@
   </StackPanel>
   </ScrollViewer>
   </Border>
+  </controls:DialogFrame>
 </Window>

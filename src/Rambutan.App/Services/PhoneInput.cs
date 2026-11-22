@@ -79,14 +79,52 @@ public sealed class PhoneInput : AvaloniaObject
     public static void PrepareDialog(Window window)
     {
         if (!UbuntuTouchPlatform.UsePhoneLayout) return;
+        ConfigurePhoneDialog(window);
+    }
+
+    internal static void ConfigurePhoneDialog(Window window)
+    {
         window.Classes.Add("phone");
         window.SizeToContent = SizeToContent.Manual;
         window.MinWidth = 0;
         window.MinHeight = 0;
-        window.Width = 400;
-        window.Height = 720;
-        if (UbuntuTouchPlatform.IsUbuntuTouch) window.WindowState = WindowState.Maximized;
-        window.Opened += (_, _) => AttachWindow(window);
+        window.WindowDecorations = WindowDecorations.None;
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        // Lomiri does not reliably maximize transient X11 windows. Their actual
+        // size and origin must follow the owner's client, in logical units.
+        window.WindowState = WindowState.Normal;
+        window.Width = 360;
+        window.Height = 640;
+        Window? owner = null;
+        void Fit()
+        {
+            if (owner is null || owner.ClientSize.Width <= 0 || owner.ClientSize.Height <= 0) return;
+            window.MaxWidth = owner.ClientSize.Width;
+            window.MaxHeight = owner.ClientSize.Height;
+            window.Width = owner.ClientSize.Width;
+            window.Height = owner.ClientSize.Height;
+            window.Position = owner.PointToScreen(default);
+        }
+        void OnSize(object? sender, SizeChangedEventArgs args) => Fit();
+        void OnPosition(object? sender, PixelPointEventArgs args) => Fit();
+        window.Opened += (_, _) =>
+        {
+            owner = window.Owner as Window;
+            if (owner is not null)
+            {
+                owner.SizeChanged += OnSize;
+                owner.PositionChanged += OnPosition;
+                Fit();
+            }
+            AttachWindow(window);
+            AppLog.Write("touch/dialog", $"{window.GetType().Name}: client={window.ClientSize}; owner={owner?.ClientSize}; scale={window.RenderScaling}.");
+        };
+        window.Closed += (_, _) =>
+        {
+            if (owner is null) return;
+            owner.SizeChanged -= OnSize;
+            owner.PositionChanged -= OnPosition;
+        };
     }
 
     public static void AttachWindow(Window window)
